@@ -5,6 +5,8 @@ from re import compile as re_compile, Pattern as RePattern
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, Client, Server
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
+SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za-z]+)')
+
 _QUERY_PATTERN: Final[RePattern] = re_compile(
     pattern=r'^(?P<name>.+): type (?P<type>.+),\s*class (?P<class>[^,]+)(,.+ (?P<data>.+))?$'
 )
@@ -431,8 +433,10 @@ def entry_from_tls(
     else:
         tls_version_protocol, tls_version = None, None
 
-    if next_protocol := tshark_tls_layer.get('tls_tls_handshake_extensions_alps_alpn_str'):
-        next_protocol = [next_protocol] if not isinstance(next_protocol, list) else next_protocol
+    next_protocol = tshark_tls_layer.get('tls_tls_handshake_extensions_alps_alpn_str')
+
+    # if next_protocol := tshark_tls_layer.get('tls_tls_handshake_extensions_alps_alpn_str'):
+    #     next_protocol = [next_protocol] if not isinstance(next_protocol, list) else next_protocol
 
     return Base(
         destination=Destination(

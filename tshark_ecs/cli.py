@@ -6,7 +6,7 @@ from pathlib import Path
 from typed_argument_parser import TypedArgumentParser
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
-from tshark_ecs import _LAYER_MAP
+from tshark_ecs import _LAYER_MAP, SPEC_LAYER_PATTERN
 
 
 class TSharkECSArgumentParser(TypedArgumentParser):
@@ -80,10 +80,14 @@ class TSharkECSArgumentParser(TypedArgumentParser):
                         elif spec_str_part == '**':
                             spec = spec + ['*'] * (len(_LAYER_MAP) - len(spec))
                             break
-                        elif spec_str_part in _LAYER_MAP[-i]:
-                            spec.append(spec_str_part)
+                        elif spec_str_part == '':
+                            spec.append('')
                         else:
-                            raise parser.error(f'The spec string "{spec_str}" does not match.')
+                            match = SPEC_LAYER_PATTERN.match(string=spec_str_part)
+                            if match and match.groupdict()['layer_name'] in _LAYER_MAP[-i]:
+                                spec.append(spec_str_part)
+                            else:
+                                raise parser.error(f'The spec string "{spec_str}" does not match.')
 
                 spec_list.append(tuple(reversed(spec)))
 
