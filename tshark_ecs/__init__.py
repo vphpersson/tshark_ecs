@@ -377,7 +377,8 @@ def entry_from_dns(
                 else None
             ),
             type='answer' if 'dns_dns_response_to' in tshark_dns_layer else 'query'
-        )
+        ),
+        network=Network(protocol='dns')
     )
 
 
@@ -458,7 +459,8 @@ def entry_from_tls(
             version=tls_version,
             version_protocol=tls_version_protocol,
             **client_server_params
-        )
+        ),
+        network=Network(protocol='tls')
     )
 
 
