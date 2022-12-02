@@ -74,7 +74,6 @@ class TSharkECSArgumentParser(TypedArgumentParser):
                         raise NotImplementedError('"**" are not supported at the end of a spec string.')
 
                     for i, spec_str_part in enumerate(reversed(spec_str_parts), start=1):
-                        
                         if spec_str_part == '*':
                             spec.append(spec_str_part)
                         elif spec_str_part == '**':
