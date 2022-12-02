@@ -1,118 +1,162 @@
 #!/usr/bin/env python
 
-from json import loads as json_loads, dumps as json_dumps
+from dataclasses import dataclass
+from logging import Logger, getLogger, INFO
+from logging.handlers import TimedRotatingFileHandler
+from json import loads as json_loads
 from functools import partial
 from typing import Type, Any, Final
-from itertools import zip_longest
 from re import compile as re_compile, Pattern as RePattern
+from itertools import zip_longest
+from datetime import datetime
 
-from ecs_py import Base
+from ecs_py import Base, Event
+from ecs_tools_py import make_log_handler
+from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 from tshark_ecs.cli import TSharkECSArgumentParser
 from tshark_ecs import _LAYER_MAP, SPEC_LAYER_PATTERN
 
 
+@dataclass
+class Condition:
+    key: str
+    value: str
+
+
+@dataclass
+class ParseResult:
+    base: Base
+    extra: dict[str, Any]
+
+
+LOG: Logger = getLogger(__name__)
+
+log_handler = make_log_handler(
+    base_class=TimedRotatingFileHandler,
+    provider_name='tshark_ecs',
+    generate_field_names=('event.timezone', 'host.name', 'host.hostname')
+)(filename='tshark_ecs.log', when='D')
+
+LOG.addHandler(hdlr=log_handler)
+LOG.setLevel(level=INFO)
+
 CONDITION_PATTERN: Final[RePattern] = re_compile(pattern=r'\[(?P<key>[^=]+)=(?P<value>.+?)\]')
+
+
+def _select_spec(specs, layer_name_to_layer_dict: dict[str, dict[str, str]]):
+    for spec in specs:
+        if len(layer_name_to_layer_dict) > len(spec):
+            continue
+
+        spec_matches = False
+
+        for spec_layer_value, layer_name in zip_longest(spec, layer_name_to_layer_dict, fillvalue=''):
+            if spec_layer_value in {'', '*'}:
+                continue
+
+            spec_layer_name = SPEC_LAYER_PATTERN.match(string=spec_layer_value).groupdict()['layer_name']
+
+            if spec_layer_name != layer_name:
+                break
+
+            conditions: list[Condition] = [
+                Condition(key=group_dict['key'], value=group_dict['value'])
+                for match in CONDITION_PATTERN.finditer(string=spec_layer_value)
+                if (group_dict := match.groupdict())
+            ]
+
+            layer_dict: dict[str, str] = layer_name_to_layer_dict[layer_name]
+            if not all(layer_dict.get(condition.key) == condition.value for condition in conditions):
+                break
+        else:
+            spec_matches = True
+
+        if not spec_matches:
+            continue
+
+        return spec
+
+    return None
+
+
+def handle_tshark_dict(
+    tshark_dict: dict[str, Any],
+    specs: list[tuple[str, str, str, str]],
+    public_suffix_list: PublicSuffixListTrie= None
+) -> ParseResult | None:
+    """
+
+    :param tshark_dict:
+    :param specs:
+    :param public_suffix_list:
+    :return:
+    """
+
+    if 'layers' not in tshark_dict:
+        return None
+
+    layer_name_to_layer_dict: dict[str, dict[str, str]] = tshark_dict['layers']
+
+    frame_layer = tshark_dict['layers'].pop('frame')
+
+    spec = _select_spec(specs=specs, layer_name_to_layer_dict=layer_name_to_layer_dict)
+    if not spec:
+        return None
+
+    base_entry: Base | None = None
+
+    for i, (layer_name, layer_dict) in enumerate(layer_name_to_layer_dict.items()):
+        layer_func = _LAYER_MAP[i].get(layer_name)
+        if not layer_func:
+            continue
+
+        # Add extra arguments when calling some the parser function for some layers.
+        match layer_name:
+            case 'dns':
+                layer_func = partial(layer_func, public_suffix_list_trie=public_suffix_list)
+            case 'tls':
+                layer_func = partial(
+                    layer_func,
+                    public_suffix_list_trie=public_suffix_list,
+                    include_supported_ciphers=False
+                )
+            case 'icmp':
+                layer_func = partial(layer_func, layer_name_to_layer_dict=layer_name_to_layer_dict)
+
+        line_base_entry: Base | None = layer_func(layer_dict)
+        # If no `Base` entry is returned, the packet (line) is deemed uninteresting.
+        if not line_base_entry:
+            return None
+
+        # Merge the current layer's base entry with the one for the previous layers.
+        base_entry = base_entry or Base()
+        base_entry |= line_base_entry
+
+    if base_entry is not None:
+        base_entry.event = Event(created=datetime.fromtimestamp(float(frame_layer['frame_frame_time_epoch'])))
+        return ParseResult(
+            base=base_entry,
+            extra=dict(interface=frame_layer['frame_frame_interface_name'])
+        )
+
+    return base_entry
 
 
 def main():
     args: Type[TSharkECSArgumentParser.Namespace] = TSharkECSArgumentParser().parse_args()
 
     for line in args.file:
-        line_dict: dict[str, dict[str, Any]] = json_loads(line)
-
-        if 'layers' not in line_dict:
-            continue
-
-        discard_line = False
-
-        frame_layer = line_dict['layers'].pop('frame')
-
-        layer_names: list[str] = list(line_dict['layers'].keys())
-
-        base_entry: Base | None = None
-
-        for spec in args.specs:
-            spec_layer_names: list[str] = []
-            spec_layer_conditions: list[list[tuple[str, str]]] = []
-            try_next_spec = True
-
-            for spec_layer_value, layer_name in zip_longest(spec, layer_names, fillvalue=''):
-                if spec_layer_value in {'', '*'}:
-                    spec_layer_names.append(spec_layer_value)
-                    spec_layer_conditions.append([])
-                    continue
-
-                if (spec_layer_name := SPEC_LAYER_PATTERN.match(string=spec_layer_value).groupdict()['layer_name']) != layer_name:
-                    break
-                else:
-                    spec_layer_names.append(spec_layer_name)
-
-                spec_layer_conditions.append([
-                    (group_dict['key'], group_dict['value'])
-                    for match in CONDITION_PATTERN.finditer(string=spec_layer_value)
-                    if (group_dict := match.groupdict())
-                ])
-            else:
-                try_next_spec = False
-
-            if try_next_spec:
-                continue
-
-            for i, (layer_name, layer_dict) in enumerate(line_dict['layers'].items()):
-                if i >= len(spec):
-                    discard_line = True
-                    break
-
-                if spec_layer_names[i] == '':
-                    continue
-
-                if spec_layer_names[i] == '*' or spec_layer_names[i] == layer_name:
-                    for condition in spec_layer_conditions[i]:
-                        key, value = condition
-                        if layer_dict.get(key) != value:
-                            discard_line = True
-                            break
-
-                    if discard_line:
-                        break
-
-                    # Retrieve the function for parsing the current layer.
-                    if layer_func := _LAYER_MAP[i].get(layer_name):
-                        # Add extra arguments when calling some the parser function for some layers.
-                        match layer_name:
-                            case 'dns':
-                                layer_func = partial(layer_func, public_suffix_list_trie=args.public_suffix_list)
-                            case 'tls':
-                                layer_func = partial(
-                                    layer_func,
-                                    public_suffix_list_trie=args.public_suffix_list,
-                                    include_supported_ciphers=False
-                                )
-                            case 'icmp':
-                                line_base_entry = layer_func(layer_dict, line_dict['layers'])
-                                base_entry = base_entry or Base()
-                                base_entry |= line_base_entry
-                                # TODO: Why?
-                                break
-
-                        line_base_entry: Base | None = layer_func(layer_dict)
-                        # If no `Base` entry is returned, the packet (line) is deemed uninteresting.
-                        if not line_base_entry:
-                            discard_line = True
-                            break
-
-                        # Merge the current layer's base entry with the one for the previous layers.
-                        base_entry = base_entry or Base()
-                        base_entry |= line_base_entry
-                else:
-                    raise ValueError(f'The spec "{spec}" could not be applied to the layer "{layer_name}".')
-
-            # A spec has matched the layers. Do not attempt to parse the layers using another spec.
-            break
-
-        if base_entry and not discard_line:
-            print(base_entry)
+        try:
+            parse_result: ParseResult | None = handle_tshark_dict(
+                tshark_dict=json_loads(line),
+                specs=args.specs,
+                public_suffix_list=args.public_suffix_list
+            )
+            if parse_result:
+                LOG.info(str(parse_result.base), extra=parse_result.extra)
+        except:
+            LOG.exception(msg='An error occurred when attempting to parse a TShark JSON line.')
 
 
 if __name__ == '__main__':

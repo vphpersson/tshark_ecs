@@ -462,11 +462,11 @@ def entry_from_tls(
     )
 
 
-def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layers: dict[str, Any]) -> Base:
+def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layer_name_to_layer_dict: dict[str, Any]) -> Base:
     """
 
     :param tshark_icmp_layer:
-    :param layers:
+    :param layer_name_to_layer_dict:
     :return:
     """
 
@@ -498,11 +498,11 @@ def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layers: dict[str, Any]) -
             server=Server(address=ip_base.destination.address, ip=ip_base.destination.ip, port=server_port)
         )
 
-        if (last_layer_name := list(layers.keys())[-1]) != 'icmp':
+        if (last_layer_name := list(layer_name_to_layer_dict.keys())[-1]) != 'icmp':
             application = last_layer_name
 
-    if 'ip' in layers:
-        version = layers['ip']['ip_ip_version'].removeprefix('ipv')
+    if 'ip' in layer_name_to_layer_dict:
+        version = layer_name_to_layer_dict['ip']['ip_ip_version'].removeprefix('ipv')
 
     icmp_type = int(tshark_icmp_layer['icmp_icmp_type'])
     icmp_code = int(tshark_icmp_layer['icmp_icmp_code'])
