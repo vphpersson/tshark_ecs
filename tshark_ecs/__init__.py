@@ -330,16 +330,19 @@ def entry_from_dns(
     if len(tshark_dns_layer['text']) > 1:
         if ttl_value := tshark_dns_layer.get('dns_dns_resp_ttl'):
             tshark_dns_layer['dns_dns_resp_ttl'] = ([ttl_value] if not isinstance(ttl_value, list) else ttl_value)
+        else:
+            tshark_dns_layer['dns_dns_resp_ttl'] = []
 
         for i, answer_summary_string in enumerate(tshark_dns_layer['text'][1:]):
             answer_name, answer_type, answer_class, answer_data = _parse_dns_summary_string(
                 summary_string=answer_summary_string
             )
 
-            answer_ttl: int | None = (
-                int(tshark_dns_layer['dns_dns_resp_ttl'][i]) if 'dns_dns_resp_ttl' in tshark_dns_layer
-                else None
-            )
+            answer_ttl: int | None
+            try:
+                answer_ttl = int(tshark_dns_layer['dns_dns_resp_ttl'][i])
+            except IndexError:
+                answer_ttl = None
 
             answers.append(
                 DNSAnswer(class_=answer_class, data=answer_data, name=answer_name, ttl=answer_ttl, type=answer_type)
