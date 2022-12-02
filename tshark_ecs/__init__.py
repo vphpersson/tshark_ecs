@@ -8,7 +8,7 @@ from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTri
 SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za-z]+)')
 
 _QUERY_PATTERN: Final[RePattern] = re_compile(
-    pattern=r'^(?P<name>.+): type (?P<type>.+),\s*class (?P<class>[^,]+)(,.+ (?P<data>.+))?$'
+    pattern=r'^(?P<name>.+): type (?P<type>.+)(,\s*class (?P<class>[^,]+)(,.+ (?P<data>.+))?)?$'
 )
 
 OP_CODE_ID_TO_OP_CODE_NAME: Final[dict[int, str]] = {0: 'QUERY'}
@@ -280,7 +280,7 @@ def _parse_dns_header_flags(tshark_dns_flags_tree: dict[str, str]) -> list[str]:
     return dns_flags
 
 
-def _parse_dns_summary_string(summary_string: str) -> tuple[str, str, str, str | None]:
+def _parse_dns_summary_string(summary_string: str) -> tuple[str, str, str | None, str | None]:
     """
     Extract values from the summary string used in keys of the `Answers` and `Queries` objects in the `dns` layer.
 
@@ -289,7 +289,7 @@ def _parse_dns_summary_string(summary_string: str) -> tuple[str, str, str, str |
     """
 
     query_match_dict: dict[str, str] = _QUERY_PATTERN.match(string=summary_string).groupdict()
-    return query_match_dict['name'], query_match_dict['type'], query_match_dict['class'], query_match_dict.get('data')
+    return query_match_dict['name'], query_match_dict['type'], query_match_dict.get('class'), query_match_dict.get('data')
 
 
 def entry_from_dns(
@@ -328,16 +328,18 @@ def entry_from_dns(
     answers: list[DNSAnswer] = []
 
     if len(tshark_dns_layer['text']) > 1:
-        tshark_dns_layer['dns_dns_resp_ttl'] = (
-            [ttl_value] if not isinstance(ttl_value := tshark_dns_layer['dns_dns_resp_ttl'], list) else ttl_value
-        )
+        if ttl_value := tshark_dns_layer.get('dns_dns_resp_ttl'):
+            tshark_dns_layer['dns_dns_resp_ttl'] = ([ttl_value] if not isinstance(ttl_value, list) else ttl_value)
 
         for i, answer_summary_string in enumerate(tshark_dns_layer['text'][1:]):
             answer_name, answer_type, answer_class, answer_data = _parse_dns_summary_string(
                 summary_string=answer_summary_string
             )
 
-            answer_ttl: int = int(tshark_dns_layer['dns_dns_resp_ttl'][i])
+            answer_ttl: int | None = (
+                int(tshark_dns_layer['dns_dns_resp_ttl'][i]) if 'dns_dns_resp_ttl' in tshark_dns_layer
+                else None
+            )
 
             answers.append(
                 DNSAnswer(class_=answer_class, data=answer_data, name=answer_name, ttl=answer_ttl, type=answer_type)
