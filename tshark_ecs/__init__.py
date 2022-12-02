@@ -294,13 +294,15 @@ def _parse_dns_summary_string(summary_string: str) -> tuple[str, str, str | None
 
 def entry_from_dns(
     tshark_dns_layer: dict[str, Any],
-    public_suffix_list_trie: PublicSuffixListTrie | None = None
+    public_suffix_list_trie: PublicSuffixListTrie | None = None,
+    hide_opt: bool = True
 ) -> Base:
     """
     Make a `Base` entry from the `dns` layer of TShark's `json` output.
 
     :param tshark_dns_layer: The `dns` layer to be parsed.
     :param public_suffix_list_trie:
+    :param hide_opt: Whether to hide OPT records.
     :return: An ECS `Base` entry.
     """
 
@@ -338,6 +340,9 @@ def entry_from_dns(
                 summary_string=answer_summary_string
             )
 
+            if answer_type == 'OPT' and hide_opt:
+                continue
+
             answer_ttl: int | None
             try:
                 answer_ttl = int(tshark_dns_layer['dns_dns_resp_ttl'][i])
@@ -371,7 +376,7 @@ def entry_from_dns(
                 if (rcode_value := tshark_dns_layer.get('dns_dns_flags_rcode')) is not None
                 else None
             ),
-            type='answer' if 'dns_dns_response_to' in tshark_dns_layer else 'question'
+            type='answer' if 'dns_dns_response_to' in tshark_dns_layer else 'query'
         )
     )
 
