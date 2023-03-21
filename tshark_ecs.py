@@ -156,7 +156,13 @@ def main():
             if parse_result:
                 LOG.info(str(parse_result.base), extra=parse_result.extra)
         except:
-            LOG.exception(msg='An error occurred when attempting to parse a TShark JSON line.')
+            LOG.exception(
+                msg='An error occurred when attempting to parse a TShark JSON line.',
+                extra=dict(
+                    error=dict(input=line),
+                    _ecs_logger_handler_options=dict(merge_extra=True)
+                )
+            )
 
 
 if __name__ == '__main__':
