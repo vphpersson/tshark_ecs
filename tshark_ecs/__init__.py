@@ -8,7 +8,7 @@ from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTri
 SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za-z]+)')
 
 _QUERY_PATTERN: Final[RePattern] = re_compile(
-    pattern=r'^(?P<name>.+): type (?P<type>[^,]+)(,\s*class (?P<class>[^,]+)(,.+ (?P<data>.+))?)?$'
+    pattern=r'^(?P<name>.+): type (?P<type>[^,]+)(,\s*class (?P<class>[^,]+)(,(.+ )?(?P<data>.+))?)?$'
 )
 
 OP_CODE_ID_TO_OP_CODE_NAME: Final[dict[int, str]] = {0: 'QUERY'}
