@@ -320,52 +320,59 @@ def entry_from_dns(
     :return: An ECS `Base` entry.
     """
 
-    # Parse the question.
+    question_class: str | None = None
+    question_name: str | None = None
+    question_type: str | None = None
+    extra_question_params: dict[str, str] = {}
+    answers: list[DNSAnswer] | None = None
 
-    tshark_dns_layer['text'] = (
-        [text_value] if not isinstance(text_value := tshark_dns_layer['text'], list) else text_value
-    )
+    if 'text' in tshark_dns_layer:
+        # Parse the question.
 
-    question_name, question_type, question_class, _ = _parse_dns_summary_string(
-        summary_string=next(iter(tshark_dns_layer['text']))
-    )
-
-    if public_suffix_list_trie and (domain_properties := public_suffix_list_trie.get_domain_properties(domain=question_name)):
-        extra_question_params = dict(
-            registered_domain=domain_properties.registered_domain or None,
-            subdomain=domain_properties.subdomain or None,
-            top_level_domain=domain_properties.effective_top_level_domain or None
+        tshark_dns_layer['text'] = (
+            [text_value] if not isinstance(text_value := tshark_dns_layer['text'], list) else text_value
         )
-    else:
-        extra_question_params = dict()
 
-    # Parse the answers.
+        question_name, question_type, question_class, _ = _parse_dns_summary_string(
+            summary_string=next(iter(tshark_dns_layer['text']))
+        )
 
-    answers: list[DNSAnswer] = []
-
-    if len(tshark_dns_layer['text']) > 1:
-        if ttl_value := tshark_dns_layer.get('dns_dns_resp_ttl'):
-            tshark_dns_layer['dns_dns_resp_ttl'] = ([ttl_value] if not isinstance(ttl_value, list) else ttl_value)
+        if public_suffix_list_trie and (domain_properties := public_suffix_list_trie.get_domain_properties(domain=question_name)):
+            extra_question_params = dict(
+                registered_domain=domain_properties.registered_domain or None,
+                subdomain=domain_properties.subdomain or None,
+                top_level_domain=domain_properties.effective_top_level_domain or None
+            )
         else:
-            tshark_dns_layer['dns_dns_resp_ttl'] = []
+            extra_question_params = dict()
 
-        for i, answer_summary_string in enumerate(tshark_dns_layer['text'][1:]):
-            answer_name, answer_type, answer_class, answer_data = _parse_dns_summary_string(
-                summary_string=answer_summary_string
-            )
+        # Parse the answers.
 
-            if answer_type == 'OPT' and hide_opt:
-                continue
+        answers: list[DNSAnswer] = []
 
-            answer_ttl: int | None
-            try:
-                answer_ttl = int(tshark_dns_layer['dns_dns_resp_ttl'][i])
-            except IndexError:
-                answer_ttl = None
+        if len(tshark_dns_layer['text']) > 1:
+            if ttl_value := tshark_dns_layer.get('dns_dns_resp_ttl'):
+                tshark_dns_layer['dns_dns_resp_ttl'] = ([ttl_value] if not isinstance(ttl_value, list) else ttl_value)
+            else:
+                tshark_dns_layer['dns_dns_resp_ttl'] = []
 
-            answers.append(
-                DNSAnswer(class_=answer_class, data=answer_data, name=answer_name, ttl=answer_ttl, type=answer_type)
-            )
+            for i, answer_summary_string in enumerate(tshark_dns_layer['text'][1:]):
+                answer_name, answer_type, answer_class, answer_data = _parse_dns_summary_string(
+                    summary_string=answer_summary_string
+                )
+
+                if answer_type == 'OPT' and hide_opt:
+                    continue
+
+                answer_ttl: int | None
+                try:
+                    answer_ttl = int(tshark_dns_layer['dns_dns_resp_ttl'][i])
+                except IndexError:
+                    answer_ttl = None
+
+                answers.append(
+                    DNSAnswer(class_=answer_class, data=answer_data, name=answer_name, ttl=answer_ttl, type=answer_type)
+                )
 
     # Make the entry.
 

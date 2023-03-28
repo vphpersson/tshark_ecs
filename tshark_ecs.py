@@ -83,20 +83,22 @@ def _select_spec(specs, layer_name_to_layer_dict: dict[str, dict[str, str]]):
 def handle_tshark_dict(
     tshark_dict: dict[str, Any],
     specs: list[tuple[str, str, str, str]],
-    public_suffix_list: PublicSuffixListTrie= None
+    public_suffix_list: PublicSuffixListTrie = None,
+    line: str | None = None
 ) -> ParseResult | None:
     """
 
     :param tshark_dict:
     :param specs:
     :param public_suffix_list:
+    :param line:
     :return:
     """
 
     if 'layers' not in tshark_dict:
         return None
 
-    layer_name_to_layer_dict: dict[str, dict[str, str]] = tshark_dict['layers']
+    layer_name_to_layer_dict: dict[str, dict[str, str] | list] = tshark_dict['layers']
 
     frame_layer = tshark_dict['layers'].pop('frame')
 
@@ -110,6 +112,17 @@ def handle_tshark_dict(
         layer_func = _LAYER_MAP[i].get(layer_name)
         if not layer_func:
             continue
+
+        if isinstance(layer_dict, list):
+            layer_dict: dict = layer_dict[-1]
+            if 'icmp' not in layer_name_to_layer_dict:
+                LOG.warning(
+                    msg='A TShark JSON line contains a layer with a list rather than dict and does not relate to ICMP.',
+                    extra=dict(
+                        error=dict(input=line),
+                        _ecs_logger_handler_options=dict(merge_extra=True)
+                    )
+                )
 
         # Add extra arguments when calling some the parser function for some layers.
         match layer_name:
@@ -133,6 +146,10 @@ def handle_tshark_dict(
         base_entry = base_entry or Base()
         base_entry |= line_base_entry
 
+        # If the layer name is `icmp`, any remaining layers are just "metadata".
+        if layer_name == 'icmp':
+            break
+
     if base_entry is not None:
         base_entry.event = Event(created=datetime.fromtimestamp(float(frame_layer['frame_frame_time_epoch'])))
         return ParseResult(
@@ -151,7 +168,8 @@ def main():
             parse_result: ParseResult | None = handle_tshark_dict(
                 tshark_dict=json_loads(line),
                 specs=args.specs,
-                public_suffix_list=args.public_suffix_list
+                public_suffix_list=args.public_suffix_list,
+                line=line
             )
             if parse_result:
                 LOG.info(str(parse_result.base), extra=parse_result.extra)
