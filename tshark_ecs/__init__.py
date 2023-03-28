@@ -11,12 +11,26 @@ _QUERY_PATTERN: Final[RePattern] = re_compile(
     pattern=r'^(?P<name>.+): type (?P<type>[^,]+)(,\s*class (?P<class>[^,]+)(,(.+ )?(?P<data>.+))?)?$'
 )
 
-OP_CODE_ID_TO_OP_CODE_NAME: Final[dict[int, str]] = {0: 'QUERY'}
+OP_CODE_ID_TO_OP_CODE_NAME: Final[dict[int, str]] = {
+    0: 'QUERY',
+    1: 'IQUERY',
+    2: 'STATUS',
+    4: 'NOTIFY',
+    5: 'UPDATE'
+}
+
 RCODE_ID_TO_RCODE_NAME: Final[dict[int, str]] = {
     0: 'NOERROR',
+    1: 'FORMERR',
     2: 'SERVFAIL',
     3: 'NXDOMAIN',
-    5: 'REFUSED'
+    4: 'NOTIMP',
+    5: 'REFUSED',
+    6: 'YXDOMAIN',
+    7: 'YXRRSET',
+    8: 'NXRRSET',
+    9: 'NOTAUTH',
+    10: 'NOTZONE'
 }
 
 _PROTO_PREFIX: Final[str] = 'IPPROTO_'
