@@ -324,7 +324,7 @@ def entry_from_dns(
     question_name: str | None = None
     question_type: str | None = None
     extra_question_params: dict[str, str] = {}
-    answers: list[DNSAnswer] | None = None
+    answers: list[DNSAnswer] = []
 
     if 'text' in tshark_dns_layer:
         # Parse the question.
@@ -347,8 +347,6 @@ def entry_from_dns(
             extra_question_params = dict()
 
         # Parse the answers.
-
-        answers: list[DNSAnswer] = []
 
         if len(tshark_dns_layer['text']) > 1:
             if ttl_value := tshark_dns_layer.get('dns_dns_resp_ttl'):
