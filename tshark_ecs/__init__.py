@@ -2,7 +2,8 @@ import socket
 from typing import Any, Final
 from re import compile as re_compile, Pattern as RePattern
 
-from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, Client, Server
+from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
+    Client, Server, TCP
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za-z]+)')
@@ -247,6 +248,41 @@ def entry_from_udp(tshark_udp_layer: dict[str, Any]) -> Base:
     )
 
 
+def _parse_tcp_flags(tshark_tcp_layer: dict[str, str]) -> list[str]:
+    """
+    Parse the flags of a `tcp` layer.
+
+    :param tshark_tcp_layer: The `tcp` layer to be parsed.
+    :return: A list of TCP flags.
+    """
+
+    tcp_flags: list[str] = []
+
+    for key, value in tshark_tcp_layer.items():
+        if not value:
+            continue
+
+        match key:
+            case 'tcp_tcp_flags_cwr':
+                tcp_flags.append('CWR')
+            case 'tcp_tcp_flags_ece':
+                tcp_flags.append('ECE')
+            case 'tcp_tcp_flags_urg':
+                tcp_flags.append('URG')
+            case 'tcp_tcp_flags_ack':
+                tcp_flags.append('ACK')
+            case 'tcp_tcp_flags_push':
+                tcp_flags.append('PSH')
+            case 'tcp_tcp_flags_reset':
+                tcp_flags.append('RST')
+            case 'tcp_tcp_flags_syn':
+                tcp_flags.append('SYN')
+            case 'tcp_tcp_flags_fin':
+                tcp_flags.append('FIN')
+
+    return tcp_flags
+
+
 def entry_from_tcp(tshark_tcp_layer: dict[str, Any]) -> Base:
     """
     Make a `Base` entry from the `tcp` layer of TShark's `json` output.
@@ -258,7 +294,10 @@ def entry_from_tcp(tshark_tcp_layer: dict[str, Any]) -> Base:
     return Base(
         destination=Destination(port=int(tshark_tcp_layer['tcp_tcp_dstport'])),
         network=Network(iana_number=str(socket.IPPROTO_TCP), transport='tcp'),
-        source=Source(port=int(tshark_tcp_layer['tcp_tcp_srcport']))
+        source=Source(port=int(tshark_tcp_layer['tcp_tcp_srcport'])),
+        tcp=TCP(
+            flags=_parse_tcp_flags(tshark_tcp_layer=tshark_tcp_layer) or None
+        )
     )
 
 
