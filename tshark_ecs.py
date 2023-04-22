@@ -67,7 +67,7 @@ def _select_spec(specs, layer_name_to_layer_dict: dict[str, dict[str, str]]):
             ]
 
             layer_dict: dict[str, str] = layer_name_to_layer_dict[layer_name]
-            if not all(str(layer_dict.get(condition.key)) == condition.value for condition in conditions):
+            if not all(str(layer_dict.get(condition.key, '')) == condition.value for condition in conditions):
                 break
         else:
             spec_matches = True
