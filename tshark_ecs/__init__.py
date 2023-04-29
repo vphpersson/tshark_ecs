@@ -296,7 +296,9 @@ def entry_from_tcp(tshark_tcp_layer: dict[str, Any]) -> Base:
         network=Network(iana_number=str(socket.IPPROTO_TCP), transport='tcp'),
         source=Source(port=int(tshark_tcp_layer['tcp_tcp_srcport'])),
         tcp=TCP(
-            flags=_parse_tcp_flags(tshark_tcp_layer=tshark_tcp_layer) or None
+            flags=_parse_tcp_flags(tshark_tcp_layer=tshark_tcp_layer) or None,
+            sequence_number=(int(seq_num) if (seq_num := tshark_tcp_layer.get('tcp_tcp_seq_raw', None)) else None),
+            acknowledgement_number=(int(ack_num) if (ack_num := tshark_tcp_layer.get('tcp_tcp_ack_raw', None)) else None)
         )
     )
 
