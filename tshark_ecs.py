@@ -161,7 +161,7 @@ def handle_tshark_dict(
 
 
 def main():
-    args: Type[TSharkECSArgumentParser.Namespace] = TSharkECSArgumentParser().parse_args()
+    args: TSharkECSArgumentParser.Namespace = TSharkECSArgumentParser().parse_args()
 
     for line in args.file:
         try:
