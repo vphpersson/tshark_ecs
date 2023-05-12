@@ -1,3 +1,4 @@
+from logging import Logger, getLogger, INFO
 import socket
 from typing import Any, Final
 from re import compile as re_compile, Pattern as RePattern
@@ -5,6 +6,9 @@ from re import compile as re_compile, Pattern as RePattern
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
     Client, Server, TCP
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
+
+LOG: Final[Logger] = getLogger(__name__)
+
 
 SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za-z]+)')
 
