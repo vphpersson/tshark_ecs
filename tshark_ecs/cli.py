@@ -15,6 +15,7 @@ class TSharkECSArgumentParser(TypedArgumentParser):
         file: TextIOWrapper
         specs: list[tuple[str, str, str, str]]
         public_suffix_list: PublicSuffixListTrie | None
+        log_path: str
 
     def __init__(self, *args, **kwargs):
         super().__init__(
@@ -33,11 +34,16 @@ class TSharkECSArgumentParser(TypedArgumentParser):
         )
 
         self.add_argument(
+            '--log-path',
+            help='The path where log files should be written.',
+            default='tshark_ecs.log'
+        )
+
+        self.add_argument(
             '--public-suffix-list',
             type=Path,
             help='The path of a list of Public Suffix rules.',
             action=self._PublicSuffixListAction
-
         )
 
         self.add_argument(

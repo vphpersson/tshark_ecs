@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 from dataclasses import dataclass
-from logging import Logger, getLogger, INFO
+from logging import INFO
 from logging.handlers import TimedRotatingFileHandler
 from json import loads as json_loads
 from functools import partial
-from typing import Type, Any, Final
+from typing import Any, Final
 from re import compile as re_compile, Pattern as RePattern
 from itertools import zip_longest
 from datetime import datetime
@@ -15,7 +15,7 @@ from ecs_tools_py import make_log_handler
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 from tshark_ecs.cli import TSharkECSArgumentParser
-from tshark_ecs import _LAYER_MAP, SPEC_LAYER_PATTERN
+from tshark_ecs import _LAYER_MAP, SPEC_LAYER_PATTERN ,LOG
 
 
 @dataclass
@@ -29,17 +29,6 @@ class ParseResult:
     base: Base
     extra: dict[str, Any]
 
-
-LOG: Logger = getLogger(__name__)
-
-log_handler = make_log_handler(
-    base_class=TimedRotatingFileHandler,
-    provider_name='tshark_ecs',
-    generate_field_names=('event.timezone', 'host.name', 'host.hostname')
-)(filename='tshark_ecs.log', when='D')
-
-LOG.addHandler(hdlr=log_handler)
-LOG.setLevel(level=INFO)
 
 CONDITION_PATTERN: Final[RePattern] = re_compile(pattern=r'\[(?P<key>[^=]+)=(?P<value>.+?)\]')
 
@@ -162,6 +151,15 @@ def handle_tshark_dict(
 
 def main():
     args: TSharkECSArgumentParser.Namespace = TSharkECSArgumentParser().parse_args()
+
+    log_handler = make_log_handler(
+        base_class=TimedRotatingFileHandler,
+        provider_name='tshark_ecs',
+        generate_field_names=('event.timezone', 'host.name', 'host.hostname')
+    )(filename=args.log_path, when='D')
+
+    LOG.addHandler(hdlr=log_handler)
+    LOG.setLevel(level=INFO)
 
     for line in args.file:
         try:
