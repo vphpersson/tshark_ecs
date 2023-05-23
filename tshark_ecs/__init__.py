@@ -473,6 +473,7 @@ def entry_from_tls(
                 client=TLSClient(
                     server_name=server_name,
                     ja3=tshark_tls_layer.get('tls_tls_handshake_ja3'),
+                    ja3_full=tshark_tls_layer.get('tls_tls_handshake_ja3_full'),
                     supported_ciphers=([
                         CIPHER_ID_TO_CIPHER_NAME.get(int(cipher_id, 16), cipher_id)
                         for cipher_id in tshark_tls_layer.get('tls_tls_handshake_ciphersuite', [])
