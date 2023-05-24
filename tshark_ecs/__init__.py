@@ -2,9 +2,10 @@ from logging import Logger, getLogger, INFO
 import socket
 from typing import Any, Final
 from re import compile as re_compile, Pattern as RePattern
+from collections import defaultdict
 
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
-    Client, Server, TCP
+    Client, Server, TCP, Http, HttpRequest, HttpResponse, UserAgent, URL
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 LOG: Final[Logger] = getLogger(__name__)
@@ -444,6 +445,79 @@ def entry_from_dns(
         ),
         network=Network(protocol='dns')
     )
+
+
+def entry_from_http(tshark_http_layer: dict[str, Any]) -> Base | None:
+    """
+    Make a `Base` entry from the `http` layer of TShark's `json` output.
+
+    :param tshark_http_layer: The `http` layer to be parsed.
+    :return:
+    """
+
+    if 'http_http_request' in tshark_http_layer:
+        headers: dict[str, list[str]] = defaultdict(list)
+        for line in tshark_http_layer.get('http_http_request_line', []):
+            name: str
+            value: str
+            name, value = line.split(sep=': ', maxsplit=1)
+            headers[name.replace('-', '_').lower()].append(value.removesuffix('\r\n'))
+        headers = dict(headers)
+
+        base = Base(
+            http=Http(
+                request=HttpRequest(
+                    bytes=int(content_length) if (content_length := tshark_http_layer.get('http_http_content_length') is not None) else None,
+                    headers=headers or None,
+                    method=tshark_http_layer.get('http_http_request_method'),
+                    referrer=(
+                        next(iter(referrer_headers), None) if (referrer_headers := headers.get('referrer')) else None
+                    ),
+                    content_type=headers.get('content_type')
+                ),
+                version=tshark_http_layer.get('http_http_request_version', '').removeprefix('HTTP/') or None
+            ),
+            network=Network(protocol='http')
+        )
+
+        if full_url := tshark_http_layer.get('http_http_request_full_uri'):
+            base.url = URL(
+                full=full_url,
+                path=tshark_http_layer.get('http_http_request_uri')
+            )
+
+        if user_agent := tshark_http_layer.get('http_http_user_agent'):
+            base.user_agent = UserAgent(original=user_agent)
+
+    elif 'http_http_response' in tshark_http_layer:
+        headers: dict[str, list[str]] = defaultdict(list)
+        for line in tshark_http_layer.get('http_http_response_line', []):
+            name: str
+            value: str
+            name, value = line.split(sep=': ', maxsplit=1)
+            headers[name.replace('-', '_').lower()].append(value.removesuffix('\r\n'))
+        headers = dict(headers)
+
+        base = Base(
+            http=Http(
+                response=HttpResponse(
+                    bytes=int(content_length) if (content_length := tshark_http_layer.get('http_http_content_length') is not None) else None,
+                    headers=headers or None,
+                    content_type=headers.get('content_type'),
+                    status_code=int(status_code) if (status_code := tshark_http_layer.get('http_http_response_code')) else None,
+                    reason_phrase=tshark_http_layer.get('http_http_response_code')
+                ),
+                version=tshark_http_layer.get('http_http_request_version', '').removeprefix('HTTP/') or None
+            ),
+            network=Network(protocol='http')
+        )
+
+        if full_url := tshark_http_layer.get('http_http_response_for_uri'):
+            base.url = URL(full=full_url)
+    else:
+        return None
+
+    return base
 
 
 def entry_from_tls(
