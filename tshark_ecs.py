@@ -143,7 +143,10 @@ def handle_tshark_dict(
         base_entry.event = Event(created=datetime.fromtimestamp(float(frame_layer['frame_frame_time_epoch'])))
         return ParseResult(
             base=base_entry,
-            extra=dict(interface=frame_layer['frame_frame_interface_name'])
+            extra=dict(
+                interface=frame_layer['frame_frame_interface_name'],
+                protocols=frame_layer['frame_frame_protocols'].split(':')
+            )
         )
 
     return base_entry
