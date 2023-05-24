@@ -671,5 +671,5 @@ _LAYER_MAP = [
     dict(),
     {'ip': entry_from_ip},
     {'udp': entry_from_udp, 'tcp': entry_from_tcp, 'icmp': entry_from_icmp},
-    {'dns': entry_from_dns, 'tls': entry_from_tls}
+    {'dns': entry_from_dns, 'tls': entry_from_tls, 'http': entry_from_http}
 ]
