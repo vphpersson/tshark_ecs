@@ -457,7 +457,12 @@ def entry_from_http(tshark_http_layer: dict[str, Any]) -> Base | None:
 
     if 'http_http_request' in tshark_http_layer:
         headers: dict[str, list[str]] = defaultdict(list)
-        for line in tshark_http_layer.get('http_http_request_line', []):
+
+        http_header_strings: str | list[str] = tshark_http_layer.get('http_http_request_line', [])
+        if isinstance(http_header_strings, str):
+            http_header_strings = [http_header_strings]
+
+        for line in http_header_strings:
             name: str
             value: str
             name, value = line.split(sep=': ', maxsplit=1)
