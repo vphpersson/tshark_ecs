@@ -218,23 +218,37 @@ def entry_from_ip(tshark_ip_layer: dict[str, Any]) -> Base:
     source_ip: str = tshark_ip_layer['ip_ip_src']
     protocol_number: str = tshark_ip_layer['ip_ip_proto']
 
-    # TODO: Move.
-    # TODO: The documentation mentions other values for network type; not sure how those are derived.
-    network_type: str | None = None
-    match tshark_ip_layer.get('ip_ip_version'):
-        case '4':
-            network_type = 'ipv4'
-        case '6':
-            network_type = 'ipv6'
+    return Base(
+        destination=Destination(address=destination_ip, ip=destination_ip),
+        network=Network(
+            iana_number=protocol_number,
+            transport=PROTO_ID_TO_PROTO_NAME[int(protocol_number)],
+            type='ipv4'
+        ),
+        source=Source(address=source_ip, ip=source_ip)
+    )
+
+
+def entry_from_ipv6(tshark_ipv6_layer: dict[str, Any]) -> Base:
+    """
+    Make a `Base` entry from the `ip` layer of TShark's `json` output.
+
+    :param tshark_ipv6_layer: The `ipv6` layer to be parsed.
+    :return: An ECS `Base` entry.
+    """
+
+    destination_ip: str = tshark_ipv6_layer['ipv6_ipv6_dst']
+    source_ip: str = tshark_ipv6_layer['ipv6_ipv6_src']
+    protocol_number: str = tshark_ipv6_layer['ipv6_ipv6_proto']
 
     return Base(
         destination=Destination(address=destination_ip, ip=destination_ip),
         network=Network(
             iana_number=protocol_number,
             transport=PROTO_ID_TO_PROTO_NAME[int(protocol_number)],
-            type=network_type
+            type='ipv6'
         ),
-        source=Source(address=source_ip, ip=source_ip),
+        source=Source(address=source_ip, ip=source_ip)
     )
 
 
@@ -674,7 +688,7 @@ def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layer_name_to_layer_dict:
 
 _LAYER_MAP = [
     dict(),
-    {'ip': entry_from_ip},
+    {'ip': entry_from_ip, 'ipv6': entry_from_ipv6},
     {'udp': entry_from_udp, 'tcp': entry_from_tcp, 'icmp': entry_from_icmp},
     {'dns': entry_from_dns, 'tls': entry_from_tls, 'http': entry_from_http}
 ]
