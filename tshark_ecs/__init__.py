@@ -11,7 +11,7 @@ from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTri
 LOG: Final[Logger] = getLogger(__name__)
 
 
-SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za-z]+)')
+SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za-z0-9]+)')
 
 _QUERY_PATTERN: Final[RePattern] = re_compile(
     pattern=r'^(?P<name>.+): type (?P<type>[^,]+)(,\s*class (?P<class>[^,]+)(,(.+ )?(?P<data>.+))?)?$'
