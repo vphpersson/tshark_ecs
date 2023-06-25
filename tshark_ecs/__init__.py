@@ -239,7 +239,7 @@ def entry_from_ipv6(tshark_ipv6_layer: dict[str, Any]) -> Base:
 
     destination_ip: str = tshark_ipv6_layer['ipv6_ipv6_dst']
     source_ip: str = tshark_ipv6_layer['ipv6_ipv6_src']
-    protocol_number: str = tshark_ipv6_layer['ipv6_ipv6_proto']
+    protocol_number: str = tshark_ipv6_layer['ipv6_ipv6_nxt']
 
     return Base(
         destination=Destination(address=destination_ip, ip=destination_ip),
