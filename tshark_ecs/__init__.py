@@ -562,11 +562,26 @@ def entry_from_tls(
         # "1" corresponds to a "ClientHello" message.
         case '1':
             server_name = tshark_tls_layer.get('tls_tls_handshake_extensions_server_name')
+
+            ja3_full = tshark_tls_layer.get('tls_tls_handshake_ja3_full')
+            (
+                ja3_ssl_version,
+                ja3_cipher,
+                ja3_ssl_extension,
+                ja3_elliptic_curve,
+                ja3_elliptic_curve_point_format
+            ) = ja3_full.split('-')
+
             client_server_params = dict(
                 client=TLSClient(
                     server_name=server_name,
                     ja3=tshark_tls_layer.get('tls_tls_handshake_ja3'),
                     ja3_full=tshark_tls_layer.get('tls_tls_handshake_ja3_full'),
+                    ja3_ssl_version=ja3_ssl_version,
+                    ja3_cipher=ja3_cipher,
+                    ja3_ssl_extension=ja3_ssl_extension,
+                    ja3_elliptic_curve=ja3_elliptic_curve,
+                    ja3_elliptic_curve_point_format=ja3_elliptic_curve_point_format,
                     supported_ciphers=([
                         CIPHER_ID_TO_CIPHER_NAME.get(int(cipher_id, 16), cipher_id)
                         for cipher_id in tshark_tls_layer.get('tls_tls_handshake_ciphersuite', [])
