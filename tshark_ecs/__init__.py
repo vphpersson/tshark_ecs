@@ -570,7 +570,7 @@ def entry_from_tls(
                 ja3_ssl_extension,
                 ja3_elliptic_curve,
                 ja3_elliptic_curve_point_format
-            ) = ja3_full.split('-')
+            ) = ja3_full.split(',')
 
             client_server_params = dict(
                 client=TLSClient(
