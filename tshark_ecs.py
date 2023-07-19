@@ -15,7 +15,7 @@ from ecs_tools_py import make_log_handler
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 from tshark_ecs.cli import TSharkECSArgumentParser
-from tshark_ecs import _LAYER_MAP, SPEC_LAYER_PATTERN ,LOG
+from tshark_ecs import LOG, SPEC_LAYER_PATTERN, LAYER_TO_FUNC
 
 
 @dataclass
@@ -91,14 +91,13 @@ def handle_tshark_dict(
 
     frame_layer = tshark_dict['layers'].pop('frame')
 
-    spec = _select_spec(specs=specs, layer_name_to_layer_dict=layer_name_to_layer_dict)
-    if not spec:
-        return None
+    if specs and not _select_spec(specs=specs, layer_name_to_layer_dict=layer_name_to_layer_dict):
+        return
 
     base_entry: Base | None = None
 
     for i, (layer_name, layer_dict) in enumerate(layer_name_to_layer_dict.items()):
-        layer_func = _LAYER_MAP[i].get(layer_name)
+        layer_func = LAYER_TO_FUNC.get(layer_name)
         if not layer_func:
             continue
 
@@ -106,7 +105,7 @@ def handle_tshark_dict(
             layer_dict: dict = layer_dict[-1]
             if 'icmp' not in layer_name_to_layer_dict:
                 LOG.warning(
-                    msg='A TShark JSON line contains a layer with a list rather than dict and does not relate to ICMP.',
+                    msg='A TShark JSON line contains a layer with a list rather than dict, and does not relate to ICMP.',
                     extra=dict(
                         error=dict(input=line),
                         _ecs_logger_handler_options=dict(merge_extra=True)
