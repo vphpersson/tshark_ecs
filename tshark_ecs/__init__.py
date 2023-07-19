@@ -5,7 +5,7 @@ from re import compile as re_compile, Pattern as RePattern
 from collections import defaultdict
 
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
-    Client, Server, TCP, Http, HttpRequest, HttpResponse, UserAgent, URL
+    Client, Server, TCP, Http, HttpRequest, HttpResponse, UserAgent, URL, Rule, Event
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 LOG: Final[Logger] = getLogger(__name__)
@@ -16,6 +16,8 @@ SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za
 _QUERY_PATTERN: Final[RePattern] = re_compile(
     pattern=r'^(?P<name>.+): type (?P<type>[^,]+)(,\s*class (?P<class>[^,]+)(,(.+ )?(?P<data>.+))?)?$'
 )
+
+_RULE_PATTERN: Final[RePattern] = re_compile(pattern=r'\[(?P<ruleset>[^-]+)-(?P<name>[^-]+)-(?P<action>[^]]+)\]')
 
 OP_CODE_ID_TO_OP_CODE_NAME: Final[dict[int, str]] = {
     0: 'QUERY',
@@ -701,9 +703,60 @@ def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layer_name_to_layer_dict:
 # TODO: Add `dhcpv4` based on Pocketbeat schemas.
 
 
-_LAYER_MAP = [
-    dict(),
-    {'ip': entry_from_ip, 'ipv6': entry_from_ipv6},
-    {'udp': entry_from_udp, 'tcp': entry_from_tcp, 'icmp': entry_from_icmp},
-    {'dns': entry_from_dns, 'tls': entry_from_tls, 'http': entry_from_http}
-]
+def entry_from_nflog(tshark_nflog_layer: dict[str, Any]) -> Base | None:
+    base = Base()
+
+    data_was_extracted = False
+
+    prefix: str | None
+    if prefix := tshark_nflog_layer.get('nflog_nflog_prefix'):
+        if match := _RULE_PATTERN.match(string=prefix.rstrip()):
+            match_groupdict: dict[str, str] = match.groupdict()
+
+            rule_ruleset: str = match_groupdict['ruleset']
+            rule_name: str = match_groupdict['name']
+            base.rule = Rule(id=f'{rule_ruleset}-{rule_name}', ruleset=rule_ruleset, name=rule_name)
+
+            event_action: str | None
+            event_type: str | None
+            match match_groupdict['action']:
+                case 'A':
+                    event_action = 'accept'
+                    event_type = 'allowed'
+                case 'D':
+                    event_action = 'drop'
+                    event_type = 'denied'
+                case 'R':
+                    event_action = 'reject'
+                    event_type = 'denied'
+                case _:
+                    event_action = None
+                    event_type = None
+
+            if event_action and event_type:
+                event: Event = base.get_field_value(field_name='event', create_namespaces=True)
+                event.action = event_action
+                event.type = ['connection', event_type]
+
+        data_was_extracted = True
+
+    user_uid: str | None
+    if user_id := tshark_nflog_layer.get('nflog_nflog_uid'):
+        base.get_field_value(field_name='user', create_namespaces=True).id = user_id
+
+        data_was_extracted = True
+
+    return base if data_was_extracted else None
+
+
+LAYER_TO_FUNC = dict(
+    nflog=entry_from_nflog,
+    ip=entry_from_ip,
+    ipv6=entry_from_ipv6,
+    udp=entry_from_udp,
+    tcp=entry_from_tcp,
+    icmp=entry_from_icmp,
+    dns=entry_from_dns,
+    tls=entry_from_tls,
+    http=entry_from_http
+)
