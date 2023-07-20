@@ -1,17 +1,18 @@
-from logging import Logger, getLogger, INFO
+from logging import Logger, getLogger
 import socket
 from typing import Any, Final
 from re import compile as re_compile, Pattern as RePattern
 from collections import defaultdict
+from functools import partial
+from datetime import datetime
+from dataclasses import dataclass
 
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
-    Client, Server, TCP, Http, HttpRequest, HttpResponse, UserAgent, URL, Rule, Event
+    Client, Server, TCP, Http, HttpRequest, HttpResponse
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 LOG: Final[Logger] = getLogger(__name__)
 
-
-SPEC_LAYER_PATTERN: Final[RePattern] = re_compile(pattern='^(?P<layer_name>[A-Za-z0-9]+)')
 
 _QUERY_PATTERN: Final[RePattern] = re_compile(
     pattern=r'^(?P<name>.+): type (?P<type>[^,]+)(,\s*class (?P<class>[^,]+)(,(.+ )?(?P<data>.+))?)?$'
@@ -502,13 +503,15 @@ def entry_from_http(tshark_http_layer: dict[str, Any]) -> Base | None:
         )
 
         if full_url := tshark_http_layer.get('http_http_request_full_uri'):
-            base.url = URL(
-                full=full_url,
-                path=tshark_http_layer.get('http_http_request_uri')
+            base.assign(
+                value_dict={
+                    'url.full': full_url,
+                    'path': tshark_http_layer.get('http_http_request_uri')
+                }
             )
 
         if user_agent := tshark_http_layer.get('http_http_user_agent'):
-            base.user_agent = UserAgent(original=user_agent)
+            base.set_field_value(field_name='user_agent.original', value=user_agent)
 
     elif 'http_http_response' in tshark_http_layer:
         headers: dict[str, list[str]] = defaultdict(list)
@@ -534,7 +537,7 @@ def entry_from_http(tshark_http_layer: dict[str, Any]) -> Base | None:
         )
 
         if full_url := tshark_http_layer.get('http_http_response_for_uri'):
-            base.url = URL(full=full_url)
+            base.set_field_value(field_name='url.full', value=full_url)
     else:
         return None
 
@@ -703,7 +706,7 @@ def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layer_name_to_layer_dict:
 # TODO: Add `dhcpv4` based on Pocketbeat schemas.
 
 
-def entry_from_nflog(tshark_nflog_layer: dict[str, Any]) -> Base | None:
+def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict[str, Any]] | None = None) -> Base | None:
     base = Base()
 
     data_was_extracted = False
@@ -715,7 +718,14 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any]) -> Base | None:
 
             rule_ruleset: str = match_groupdict['ruleset']
             rule_name: str = match_groupdict['name']
-            base.rule = Rule(id=f'{rule_ruleset}-{rule_name}', ruleset=rule_ruleset, name=rule_name)
+
+            base.get_field_value(field_name='rule', create_namespaces=True).assign(
+                dict(
+                    id=f'{rule_ruleset}-{rule_name}',
+                    ruleset=rule_ruleset,
+                    name=rule_name
+                )
+            )
 
             event_action: str | None
             event_type: str | None
@@ -729,20 +739,28 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any]) -> Base | None:
                 case 'R':
                     event_action = 'reject'
                     event_type = 'denied'
+                case 'U':
+                    event_action = 'unknown'
+                    event_type = None
                 case _:
                     event_action = None
                     event_type = None
 
-            if event_action and event_type:
-                event: Event = base.get_field_value(field_name='event', create_namespaces=True)
-                event.action = event_action
-                event.type = ['connection', event_type]
+            if event_action or event_type:
+                base.get_field_value(field_name='event', create_namespaces=True).assign(
+                    dict(
+                        action=event_action,
+                        type=['connection'] + ([event_type] if event_type else [])
+                    )
+                )
 
-        data_was_extracted = True
+            data_was_extracted = True
 
-    user_uid: str | None
     if user_id := tshark_nflog_layer.get('nflog_nflog_uid'):
-        base.get_field_value(field_name='user', create_namespaces=True).id = user_id
+        base.set_field_value(field_name='user.id', value=user_id, create_namespaces=True)
+        if user_enrichment_dict := (uid_map or {}).get(user_id):
+            for field_name, field_value in user_enrichment_dict.items():
+                base.set_field_value(field_name=field_name, value=field_value, create_namespaces=True)
 
         data_was_extracted = True
 
@@ -760,3 +778,93 @@ LAYER_TO_FUNC = dict(
     tls=entry_from_tls,
     http=entry_from_http
 )
+
+
+@dataclass
+class ParseResult:
+    base: Base
+    extra: dict[str, Any]
+
+
+def handle_tshark_dict(
+    tshark_dict: dict[str, Any],
+    public_suffix_list: PublicSuffixListTrie = None,
+    uid_map: dict[str, dict[str, Any]] | None = None,
+    line: str | None = None
+) -> ParseResult | None:
+    """
+
+    :param tshark_dict:
+    :param public_suffix_list:
+    :param uid_map: A map of UIDs to enrichment information.
+    :param line: The original TShark line, provided for logging purposes.
+    :return:
+    """
+
+    if 'layers' not in tshark_dict:
+        return None
+
+    layer_name_to_layer_dict: dict[str, dict[str, str] | list] = tshark_dict['layers']
+
+    frame_layer: dict[str, Any] = tshark_dict['layers'].pop('frame')
+
+    base_entry: Base | None = None
+
+    for i, (layer_name, layer_dict) in enumerate(layer_name_to_layer_dict.items()):
+        layer_func = LAYER_TO_FUNC.get(layer_name)
+        if not layer_func:
+            continue
+
+        if isinstance(layer_dict, list):
+            layer_dict: dict = layer_dict[-1]
+            if 'icmp' not in layer_name_to_layer_dict:
+                LOG.warning(
+                    msg='A TShark JSON line contains a layer with a list rather than dict, and does not relate to ICMP.',
+                    extra=dict(
+                        error=dict(input=line),
+                        _ecs_logger_handler_options=dict(merge_extra=True)
+                    )
+                )
+
+        # Add extra arguments when calling some the parser function for some layers.
+        match layer_name:
+            case 'dns':
+                layer_func = partial(layer_func, public_suffix_list_trie=public_suffix_list)
+            case 'tls':
+                layer_func = partial(
+                    layer_func,
+                    public_suffix_list_trie=public_suffix_list,
+                    include_supported_ciphers=False
+                )
+            case 'icmp':
+                layer_func = partial(layer_func, layer_name_to_layer_dict=layer_name_to_layer_dict)
+            case 'nflog':
+                layer_func = partial(layer_func, uid_map=uid_map)
+
+        line_base_entry: Base | None = layer_func(layer_dict)
+        if not line_base_entry:
+            continue
+
+        # Merge the current layer's base entry with the one for the previous layers.
+        base_entry = base_entry or Base()
+        base_entry |= line_base_entry
+
+        # If the layer name is `icmp`, any remaining layers are just "metadata".
+        if layer_name == 'icmp':
+            break
+
+    if base_entry is not None:
+        base_entry.set_field_value(
+            field_name='event.created',
+            value=datetime.fromtimestamp(float(frame_layer['frame_frame_time_epoch']))
+        )
+
+        return ParseResult(
+            base=base_entry,
+            extra=dict(
+                interface=frame_layer['frame_frame_interface_name'],
+                protocols=frame_layer['frame_frame_protocols'].split(':')
+            )
+        )
+
+    return base_entry
