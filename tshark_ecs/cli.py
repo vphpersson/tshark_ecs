@@ -1,21 +1,28 @@
-from io import TextIOWrapper
 from argparse import FileType, Action, Namespace, ArgumentParser
+from typing import Any, Type
+from io import TextIOWrapper
 from sys import stdin
+from urllib.parse import urlparse, ParseResult, parse_qs
+from logging import Handler
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
+from json import loads as json_loads
 
 from typed_argument_parser import TypedArgumentParser
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
+# TODO: I may want to fork and edit this dependency. It uses external dependencies for functionality now in the standard
+#   library.
+from rfc5424logging import Rfc5424SysLogHandler
+from ecs_tools_py import make_log_handler
 
-from tshark_ecs import SPEC_LAYER_PATTERN
+from tshark_ecs import LOG
 
 
 class TSharkECSArgumentParser(TypedArgumentParser):
-
     class Namespace:
         file: TextIOWrapper
-        specs: list[tuple[str, str, str, str]]
         public_suffix_list: PublicSuffixListTrie | None
-        log_path: str
+        uid_map: dict[str, dict[str, Any]] | None
 
     def __init__(self, *args, **kwargs):
         super().__init__(
@@ -34,74 +41,93 @@ class TSharkECSArgumentParser(TypedArgumentParser):
         )
 
         self.add_argument(
-            '--log-path',
-            help='The path where log files should be written.',
-            default='tshark_ecs.log'
+            '--log',
+            help='A log specifier specifying how logging is to be performed.',
+            action=self._LogAction
         )
 
         self.add_argument(
             '--public-suffix-list',
-            type=Path,
             help='The path of a list of Public Suffix rules.',
             action=self._PublicSuffixListAction
         )
 
         self.add_argument(
-            'specs',
-            nargs='*',
-            metavar='SPEC',
-            help='',
-            # action=self._SpecsAction
+            '--uid-map',
+            help='The path of a JSON file from which to read a UID mapping.',
+            action=self._UidMapAction
         )
 
-    # class _SpecsAction(Action):
-    #     def __call__(self, parser: ArgumentParser, namespace: Namespace, specs: list[str], option_string: str = None):
-    #
-    #         spec_list: list[tuple[str, str, str, str]] = []
-    #
-    #         for spec_str in specs:
-    #             spec: list[str] = []
-    #
-    #             if '.' not in spec_str:
-    #                 for layer_dict in reversed(_LAYER_MAP):
-    #                     if spec_str in layer_dict:
-    #                         spec.append(spec_str)
-    #                         spec = spec + [''] * (len(_LAYER_MAP) - len(spec))
-    #                         break
-    #                     else:
-    #                         spec.append('')
-    #                 else:
-    #                     parser.error(message=f'The spec string "{spec_str}" does not match anything.')
-    #
-    #             else:
-    #                 spec_str_parts: list[str] = spec_str.split('.')
-    #
-    #                 if spec_str_parts[-1] == '**':
-    #                     raise NotImplementedError('"**" are not supported at the end of a spec string.')
-    #
-    #                 for i, spec_str_part in enumerate(reversed(spec_str_parts), start=1):
-    #                     if spec_str_part == '*':
-    #                         spec.append(spec_str_part)
-    #                     elif spec_str_part == '**':
-    #                         spec = spec + ['*'] * (len(_LAYER_MAP) - len(spec))
-    #                         break
-    #                     elif spec_str_part == '':
-    #                         spec.append('')
-    #                     else:
-    #                         match = SPEC_LAYER_PATTERN.match(string=spec_str_part)
-    #                         if match and match.groupdict()['layer_name'] in _LAYER_MAP[-i]:
-    #                             spec.append(spec_str_part)
-    #                         else:
-    #                             raise parser.error(f'The spec string "{spec_str}" does not match.')
-    #
-    #             spec_list.append(tuple(reversed(spec)))
-    #
-    #         setattr(namespace, self.dest, spec_list)
-    #
+    class _LogAction(Action):
+        def __call__(self, parser: ArgumentParser, namespace: Namespace, log_specifier: str, option_string: str = None):
+            parse_result: ParseResult = urlparse(url=log_specifier)
+            log_handler_qs_kwargs: dict[str, list[str]] = parse_qs(qs=parse_result.query)
+
+            provider_name: str = next(
+                iter(
+                    log_handler_qs_kwargs.get('provider_name', ['tshark_ecs'])
+                )
+            )
+            fields: list[str] = next(
+                iter(
+                    log_handler_qs_kwargs.get(
+                        'fields',
+                        [
+                            ','.join([
+                                'event.timezone',
+                                'host.name',
+                                'host.hostname'
+                            ])
+                        ]
+                    )
+                )
+            ).split(',')
+            enrichment_map: dict[str, Any] = json_loads(
+                next(
+                    iter(
+                        log_handler_qs_kwargs.get(
+                            'enrichment_map',
+                            ['{}']
+                        )
+                    )
+                )
+            )
+
+            log_handler_base_class: Type[Handler]
+            log_handler_kwargs: dict[str, Any]
+
+            match parse_result.scheme:
+                case 'udp':
+                    log_handler_base_class = Rfc5424SysLogHandler
+                    log_handler_kwargs = dict(address=(parse_result.hostname, int(parse_result.port)))
+                case 'file' | _:
+                    log_handler_base_class = TimedRotatingFileHandler
+                    log_handler_kwargs = dict(
+                        filename=parse_result.path,
+                        when=next(iter(log_handler_qs_kwargs.get('when', ['D'])))
+                    )
+
+            log_handler = make_log_handler(
+                base_class=log_handler_base_class,
+                provider_name=provider_name,
+                enrichment_map=enrichment_map,
+                generate_field_names=fields
+            )(**log_handler_kwargs)
+
+            LOG.addHandler(hdlr=log_handler)
+
     class _PublicSuffixListAction(Action):
         def __call__(self, parser: ArgumentParser, namespace: Namespace, public_suffix_list, option_string: str = None):
             setattr(
                 namespace,
                 'public_suffix_list',
                 PublicSuffixListTrie.from_public_suffix_list_file(file=public_suffix_list)
+            )
+
+    class _UidMapAction(Action):
+        def __call__(self, parser: ArgumentParser, namespace: Namespace, uid_map: str, option_string: str = None):
+            setattr(
+                namespace,
+                'uid_map',
+                json_loads(Path(uid_map).read_text())
             )
