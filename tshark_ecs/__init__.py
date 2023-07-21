@@ -557,10 +557,6 @@ def entry_from_tls(
     :return:
     """
 
-    # "22" corresponds to a handshake record.
-    if tshark_tls_layer.get('tls_tls_record_content_type') != '22':
-        return None
-
     server_name: str | None = None
 
     match tshark_tls_layer.get('tls_tls_handshake_type'):
@@ -813,6 +809,7 @@ def handle_tshark_dict(
     for i, (layer_name, layer_dict) in enumerate(layer_name_to_layer_dict.items()):
         layer_func = LAYER_TO_FUNC.get(layer_name)
         if not layer_func:
+            # TODO: Check for quic, then if any of the protocols in LAYER_TO_FUNC is in that namespace.
             continue
 
         if isinstance(layer_dict, list):
