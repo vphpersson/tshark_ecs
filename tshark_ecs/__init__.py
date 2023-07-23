@@ -809,8 +809,11 @@ def handle_tshark_dict(
     for i, (layer_name, layer_dict) in enumerate(layer_name_to_layer_dict.items()):
         layer_func = LAYER_TO_FUNC.get(layer_name)
         if not layer_func:
-            # TODO: Check for quic, then if any of the protocols in LAYER_TO_FUNC is in that namespace.
-            continue
+            if layer_name == 'quic' and (new_layer_name := next((name for name in layer_dict.keys() if name in LAYER_TO_FUNC), None)):
+                layer_name = new_layer_name
+                layer_dict = layer_dict[new_layer_name]
+            else:
+                continue
 
         if isinstance(layer_dict, list):
             layer_dict: dict = layer_dict[-1]
