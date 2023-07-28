@@ -784,7 +784,7 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
         user_name: str | None = None
         try:
             from pwd import getpwuid
-            user_name: getpwuid(int(user_id)).pw_name
+            user_name = getpwuid(int(user_id)).pw_name
         except:
             pass
 
