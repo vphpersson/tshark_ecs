@@ -724,13 +724,13 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
     base = Base(
         observer=Observer(
             egress=(
-                Interface(id=out_index, name=socket.if_indextoname(out_index))
+                Interface(id=out_index, name=socket.if_indextoname(int(out_index)))
                 if (out_index := tshark_nflog_layer.get('nflog_nflog_ifindex_outdev'))
                 else None
             ),
             hook=netfilter_hook,
             ingress=(
-                Interface(id=in_index, name=socket.if_indextoname(in_index))
+                Interface(id=in_index, name=socket.if_indextoname(int(in_index)))
                 if (in_index := tshark_nflog_layer.get('nflog_nflog_ifindex_indev'))
                 else None
             )
