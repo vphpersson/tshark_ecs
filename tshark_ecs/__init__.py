@@ -8,7 +8,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
-    Client, Server, TCP, Http, HttpRequest, HttpResponse
+    Client, Server, TCP, Http, HttpRequest, HttpResponse, Observer, Interface
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 LOG: Final[Logger] = getLogger(__name__)
@@ -100,6 +100,14 @@ TLS_VERSION_ID_TO_PAIR: Final[dict[int, tuple[str, str]]] = {
     0x0302: ('tls', '1.1'),
     0x0303: ('tls', '1.2'),
     0x0304: ('tls', '1.3'),
+}
+
+NETFILTER_HOOK_ID_TO_NAME: Final[dict[int, str]] = {
+    0: 'prerouting',
+    1: 'input',
+    2: 'forward',
+    3: 'output',
+    4: 'postrouting'
 }
 
 CURVE_ID_TO_NAME: Final[dict[int, str]] = {
@@ -703,9 +711,23 @@ def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layer_name_to_layer_dict:
 
 
 def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict[str, Any]] | None = None) -> Base | None:
-    base = Base()
+    base = Base(
+        observer=Observer(
+            egress=(
+                Interface(id=out_index, name=socket.if_indextoname(out_index))
+                if (out_index := tshark_nflog_layer.get('nflog_nflog_ifindex_outdev'))
+                else None
+            ),
+            ho
+            ingress=(
+                Interface(id=in_index, name=socket.if_indextoname(in_index))
+                if (in_index := tshark_nflog_layer.get('nflog_nflog_ifindex_indev'))
+                else None
+            )
+        )
+    )
 
-    data_was_extracted = False
+
 
     prefix: str | None
     if prefix := tshark_nflog_layer.get('nflog_nflog_prefix'):
@@ -750,17 +772,13 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
                     )
                 )
 
-            data_was_extracted = True
-
     if user_id := tshark_nflog_layer.get('nflog_nflog_uid'):
         base.set_field_value(field_name='user.id', value=user_id, create_namespaces=True)
         if user_enrichment_dict := (uid_map or {}).get(user_id):
             for field_name, field_value in user_enrichment_dict.items():
                 base.set_field_value(field_name=field_name, value=field_value, create_namespaces=True)
 
-        data_was_extracted = True
-
-    return base if data_was_extracted else None
+    return base
 
 
 LAYER_TO_FUNC = dict(
