@@ -866,6 +866,7 @@ def handle_tshark_dict(
             if layer_name == 'quic' and (new_layer_name := next((name for name in layer_dict.keys() if name in LAYER_TO_FUNC), None)):
                 layer_name = new_layer_name
                 layer_dict = layer_dict[new_layer_name]
+                layer_func = LAYER_TO_FUNC[new_layer_name]
             else:
                 continue
 
