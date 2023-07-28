@@ -43,6 +43,7 @@ class TSharkECSArgumentParser(TypedArgumentParser):
         self.add_argument(
             '--public-suffix-list',
             help='The path of a list of Public Suffix rules.',
+            type=FileType(mode='r'),
             action=self._PublicSuffixListAction
         )
 
