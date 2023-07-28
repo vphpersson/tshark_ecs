@@ -8,7 +8,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
-    Client, Server, TCP, Http, HttpRequest, HttpResponse, Observer, Interface
+    Client, Server, TCP, Http, HttpRequest, HttpResponse, Observer, Interface, User, Group
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 LOG: Final[Logger] = getLogger(__name__)
@@ -711,6 +711,16 @@ def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layer_name_to_layer_dict:
 
 
 def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict[str, Any]] | None = None) -> Base | None:
+    """
+    Make a `Base` entry from the `nflog` layer of TShark's `json` output.
+
+    :param tshark_nflog_layer: The `nflog` layer to be parsed.
+    :param uid_map: A map of user id to enrichment information.
+    :return: An ECS `Base` entry.
+    """
+
+    netfilter_hook: str = NETFILTER_HOOK_ID_TO_NAME[int(tshark_nflog_layer['nflog_nflog_hook'])]
+
     base = Base(
         observer=Observer(
             egress=(
@@ -718,7 +728,7 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
                 if (out_index := tshark_nflog_layer.get('nflog_nflog_ifindex_outdev'))
                 else None
             ),
-            ho
+            hook=netfilter_hook,
             ingress=(
                 Interface(id=in_index, name=socket.if_indextoname(in_index))
                 if (in_index := tshark_nflog_layer.get('nflog_nflog_ifindex_indev'))
@@ -726,8 +736,6 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
             )
         )
     )
-
-
 
     prefix: str | None
     if prefix := tshark_nflog_layer.get('nflog_nflog_prefix'):
@@ -773,10 +781,38 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
                 )
 
     if user_id := tshark_nflog_layer.get('nflog_nflog_uid'):
-        base.set_field_value(field_name='user.id', value=user_id, create_namespaces=True)
+        user_name: str | None = None
+        try:
+            from pwd import getpwuid
+            user_name: getpwuid(int(user_id)).pw_name
+        except:
+            pass
+
+        base.assign(
+            value_dict={
+                'user.id': int(user_id),
+                'user.name': user_name
+            }
+        )
+
         if user_enrichment_dict := (uid_map or {}).get(user_id):
             for field_name, field_value in user_enrichment_dict.items():
                 base.set_field_value(field_name=field_name, value=field_value, create_namespaces=True)
+
+    if group_id := tshark_nflog_layer.get('nflog_nflog_gid'):
+        group_name: str | None = None
+        try:
+            from grp import getgrgid
+            group_name = getgrgid(int(group_id)).gr_name
+        except:
+            pass
+
+        base.assign(
+            value_dict={
+                'user.group.id': int(group_id),
+                'user.group.name': group_name
+            }
+        )
 
     return base
 
