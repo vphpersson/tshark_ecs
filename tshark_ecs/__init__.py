@@ -8,7 +8,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
-    Client, Server, TCP, Http, HttpRequest, HttpResponse, Observer, Interface, User, Group
+    Client, Server, TCP, Http, HttpRequest, HttpResponse, Observer, Interface, ObserverIngressEgress
 from public_suffix.structures.public_suffix_list_trie import PublicSuffixListTrie
 
 LOG: Final[Logger] = getLogger(__name__)
@@ -723,17 +723,21 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
 
     base = Base(
         observer=Observer(
-            egress=(
-                Interface(id=out_index, name=socket.if_indextoname(int(out_index)))
-                if (out_index := tshark_nflog_layer.get('nflog_nflog_ifindex_outdev'))
-                else None
+            egress=ObserverIngressEgress(
+                interface=(
+                    Interface(id=out_index, name=socket.if_indextoname(int(out_index)))
+                    if (out_index := tshark_nflog_layer.get('nflog_nflog_ifindex_outdev'))
+                    else None
+                )
             ),
-            hook=netfilter_hook,
-            ingress=(
-                Interface(id=in_index, name=socket.if_indextoname(int(in_index)))
-                if (in_index := tshark_nflog_layer.get('nflog_nflog_ifindex_indev'))
-                else None
-            )
+            ingress=ObserverIngressEgress(
+                interface=(
+                    Interface(id=in_index, name=socket.if_indextoname(int(in_index)))
+                    if (in_index := tshark_nflog_layer.get('nflog_nflog_ifindex_indev'))
+                    else None
+                )
+            ),
+            hook=netfilter_hook
         )
     )
 
