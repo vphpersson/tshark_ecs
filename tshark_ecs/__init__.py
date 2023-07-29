@@ -18,7 +18,7 @@ _QUERY_PATTERN: Final[RePattern] = re_compile(
     pattern=r'^(?P<name>.+): type (?P<type>[^,]+)(,\s*class (?P<class>[^,]+)(,(.+ )?(?P<data>.+))?)?$'
 )
 
-_RULE_PATTERN: Final[RePattern] = re_compile(pattern=r'\[(?P<ruleset>[^-]+)-(?P<name>[^-]+)-(?P<action>[^]]+)\]')
+_RULE_PATTERN: Final[RePattern] = re_compile(pattern=r'^\[((?P<ruleset>[^-]+)-)?(?P<name>[^-]+)-(?P<action>[^]]+)\]$')
 
 OP_CODE_ID_TO_OP_CODE_NAME: Final[dict[int, str]] = {
     0: 'QUERY',
@@ -746,7 +746,24 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
         if match := _RULE_PATTERN.match(string=prefix.rstrip()):
             match_groupdict: dict[str, str] = match.groupdict()
 
-            rule_ruleset: str = match_groupdict['ruleset']
+            rule_ruleset: str | None = match_groupdict.get('ruleset')
+            if not rule_ruleset:
+                match netfilter_hook:
+                    case 'input':
+                        rule_ruleset = netfilter_hook.upper() + (
+                            f'_{name.upper()}'
+                            if (name := base.get_field_value(field_name='observer.ingress.interface.name'))
+                            else ''
+                        )
+                    case 'output':
+                        rule_ruleset = netfilter_hook.upper() + (
+                            f'_{name.upper()}'
+                            if (name := base.get_field_value(field_name='observer.egress.interface.name'))
+                            else ''
+                        )
+                    case 'forward':
+                        rule_ruleset = netfilter_hook.upper()
+
             rule_name: str = match_groupdict['name']
 
             base.get_field_value(field_name='rule', create_namespaces=True).assign(
