@@ -693,7 +693,7 @@ def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layer_name_to_layer_dict:
 
     code_to_name = ICMP_TYPE_TO_CODE_TO_NAME.get(icmp_type)
 
-    Base(
+    return Base(
         icmp=ICMP(
             version=version,
             type=icmp_type,
