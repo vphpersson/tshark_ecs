@@ -693,7 +693,7 @@ def entry_from_icmp(tshark_icmp_layer: dict[str, Any], layer_name_to_layer_dict:
 
     code_to_name = ICMP_TYPE_TO_CODE_TO_NAME.get(icmp_type)
 
-    return Base(
+    Base(
         icmp=ICMP(
             version=version,
             type=icmp_type,
@@ -761,14 +761,14 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
                             if (name := base.get_field_value(field_name='observer.egress.interface.name'))
                             else ''
                         )
-                    case 'forward':
+                    case 'prerouting' | 'forward' | 'postrouting':
                         rule_ruleset = netfilter_hook.upper()
 
             rule_name: str = match_groupdict['name']
 
             base.get_field_value(field_name='rule', create_namespaces=True).assign(
                 dict(
-                    id=f'{rule_ruleset}-{rule_name}',
+                    id=f'{rule_ruleset}-{rule_name}' if rule_ruleset else None,
                     ruleset=rule_ruleset,
                     name=rule_name
                 )
@@ -835,7 +835,7 @@ def entry_from_nflog(tshark_nflog_layer: dict[str, Any], uid_map: dict[str, dict
             }
         )
 
-    return base
+    return base if base else None
 
 
 LAYER_TO_FUNC = dict(
@@ -891,34 +891,28 @@ def handle_tshark_dict(
             else:
                 continue
 
-        if isinstance(layer_dict, list):
-            layer_dict: dict = layer_dict[-1]
-            if 'icmp' not in layer_name_to_layer_dict:
-                LOG.warning(
-                    msg='A TShark JSON line contains a layer with a list rather than dict, and does not relate to ICMP.',
-                    extra=dict(
-                        error=dict(input=line),
-                        _ecs_logger_handler_options=dict(merge_extra=True)
+        layer_dict_list = layer_dict if isinstance(layer_dict, list) else [layer_dict]
+
+        for layer_dict_list_element in layer_dict_list:
+            # Add extra arguments when calling some the parser function for some layers.
+            match layer_name:
+                case 'dns':
+                    layer_func = partial(layer_func, public_suffix_list_trie=public_suffix_list)
+                case 'tls':
+                    layer_func = partial(
+                        layer_func,
+                        public_suffix_list_trie=public_suffix_list,
+                        include_supported_ciphers=False
                     )
-                )
+                case 'icmp':
+                    layer_func = partial(layer_func, layer_name_to_layer_dict=layer_name_to_layer_dict)
+                case 'nflog':
+                    layer_func = partial(layer_func, uid_map=uid_map)
 
-        # Add extra arguments when calling some the parser function for some layers.
-        match layer_name:
-            case 'dns':
-                layer_func = partial(layer_func, public_suffix_list_trie=public_suffix_list)
-            case 'tls':
-                layer_func = partial(
-                    layer_func,
-                    public_suffix_list_trie=public_suffix_list,
-                    include_supported_ciphers=False
-                )
-            case 'icmp':
-                layer_func = partial(layer_func, layer_name_to_layer_dict=layer_name_to_layer_dict)
-            case 'nflog':
-                layer_func = partial(layer_func, uid_map=uid_map)
-
-        line_base_entry: Base | None = layer_func(layer_dict)
-        if not line_base_entry:
+            line_base_entry: Base | None = layer_func(layer_dict_list_element)
+            if line_base_entry:
+                break
+        else:
             continue
 
         # Merge the current layer's base entry with the one for the previous layers.
