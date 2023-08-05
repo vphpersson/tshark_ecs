@@ -1,6 +1,6 @@
 [project]
 name = "tshark_ecs"
-version = "0.20"
+version = "0.21"
 dependencies = [
     "git+https://github.com/vphpersson/ecs_py.git#egg=ecs_py"
 ]

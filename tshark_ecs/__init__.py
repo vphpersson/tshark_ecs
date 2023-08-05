@@ -514,7 +514,7 @@ def entry_from_http(tshark_http_layer: dict[str, Any]) -> Base | None:
             base.assign(
                 value_dict={
                     'url.full': full_url,
-                    'path': tshark_http_layer.get('http_http_request_uri')
+                    'url.path': tshark_http_layer.get('http_http_request_uri')
                 }
             )
 
