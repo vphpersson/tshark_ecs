@@ -903,6 +903,8 @@ def handle_tshark_dict(
 
         for effective_layer_name, effective_layer_dict in zip_longest(effective_layer_names, effective_layer_dicts, fillvalue=effective_layer_names[0]):
             layer_func = LAYER_TO_FUNC.get(effective_layer_name)
+            if not layer_func:
+                continue
 
             # Add extra arguments when calling some the parser function for some layers.
             match layer_name:
