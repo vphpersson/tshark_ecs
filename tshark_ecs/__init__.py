@@ -6,6 +6,7 @@ from collections import defaultdict
 from functools import partial
 from datetime import datetime
 from dataclasses import dataclass
+from itertools import zip_longest
 
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
     Client, Server, TCP, Http, HttpRequest, HttpResponse, Observer, Interface, ObserverIngressEgress
@@ -882,18 +883,27 @@ def handle_tshark_dict(
     base_entry: Base | None = None
 
     for i, (layer_name, layer_dict) in enumerate(layer_name_to_layer_dict.items()):
-        layer_func = LAYER_TO_FUNC.get(layer_name)
-        if not layer_func:
-            if layer_name == 'quic' and (new_layer_name := next((name for name in layer_dict.keys() if name in LAYER_TO_FUNC), None)):
-                layer_name = new_layer_name
-                layer_dict = layer_dict[new_layer_name]
-                layer_func = LAYER_TO_FUNC[new_layer_name]
-            else:
-                continue
-
         layer_dict_list = layer_dict if isinstance(layer_dict, list) else [layer_dict]
 
-        for layer_dict_list_element in layer_dict_list:
+        if layer_name == 'quic':
+            effective_layer_names, effective_layer_dicts = list(
+                zip(
+                    *[
+                        (name, layer_dict[name])
+                        for quic_layer_dict in layer_dict_list
+                        if (name := next((name for name in quic_layer_dict.keys() if name in LAYER_TO_FUNC), None))
+                    ]
+                )
+            )
+            if not effective_layer_names:
+                continue
+        else:
+            effective_layer_names = [layer_name]
+            effective_layer_dicts = layer_dict_list
+
+        for effective_layer_name, effective_layer_dict in zip_longest(effective_layer_names, effective_layer_dicts, fillvalue=effective_layer_names[0]):
+            layer_func = LAYER_TO_FUNC.get(effective_layer_name)
+
             # Add extra arguments when calling some the parser function for some layers.
             match layer_name:
                 case 'dns':
@@ -909,7 +919,7 @@ def handle_tshark_dict(
                 case 'nflog':
                     layer_func = partial(layer_func, uid_map=uid_map)
 
-            line_base_entry: Base | None = layer_func(layer_dict_list_element)
+            line_base_entry: Base | None = layer_func(effective_layer_dict)
             if line_base_entry:
                 break
         else:
