@@ -886,7 +886,7 @@ def handle_tshark_dict(
         layer_dict_list = layer_dict if isinstance(layer_dict, list) else [layer_dict]
 
         if layer_name == 'quic':
-            effective_layer_names, effective_layer_dicts = list(
+            packed_effective_values: list[tuple] = list(
                 zip(
                     *[
                         (name, layer_dict[name])
@@ -895,8 +895,10 @@ def handle_tshark_dict(
                     ]
                 )
             )
-            if not effective_layer_names:
+            if not packed_effective_values:
                 continue
+
+            effective_layer_names, effective_layer_dicts = packed_effective_values
         else:
             effective_layer_names = [layer_name]
             effective_layer_dicts = layer_dict_list
