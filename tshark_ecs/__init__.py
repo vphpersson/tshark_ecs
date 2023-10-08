@@ -366,7 +366,7 @@ def _parse_dns_header_flags(tshark_dns_flags_tree: dict[str, str]) -> list[str]:
     return dns_flags
 
 
-def _parse_dns_summary_string(summary_string: str) -> tuple[str, str, str | None, str | None]:
+def _parse_dns_summary_string(summary_string: str) -> tuple[str, str, str | None, str | None] | None:
     """
     Extract values from the summary string used in keys of the `Answers` and `Queries` objects in the `dns` layer.
 
@@ -374,8 +374,14 @@ def _parse_dns_summary_string(summary_string: str) -> tuple[str, str, str | None
     :return: The name, type, and class as present in the summary string.
     """
 
-    query_match_dict: dict[str, str] = _QUERY_PATTERN.match(string=summary_string).groupdict()
-    return query_match_dict['name'], query_match_dict['type'], query_match_dict.get('class'), query_match_dict.get('data')
+    if match := _QUERY_PATTERN.match(string=summary_string):
+        query_match_dict = match.groupdict()
+        return (
+            query_match_dict['name'],
+            query_match_dict['type'],
+            query_match_dict.get('class'),
+            query_match_dict.get('data')
+        )
 
 
 def entry_from_dns(
@@ -392,10 +398,7 @@ def entry_from_dns(
     :return: An ECS `Base` entry.
     """
 
-    question_class: str | None = None
-    question_name: str | None = None
-    question_type: str | None = None
-    extra_question_params: dict[str, str] = {}
+    dns_question: DNSQuestion | None = None
     answers: list[DNSAnswer] = []
 
     if 'text' in tshark_dns_layer:
@@ -405,18 +408,24 @@ def entry_from_dns(
             [text_value] if not isinstance(text_value := tshark_dns_layer['text'], list) else text_value
         )
 
-        question_name, question_type, question_class, _ = _parse_dns_summary_string(
+        dns_question_summary: tuple[str, str, str | None, str | None] | None = _parse_dns_summary_string(
             summary_string=next(iter(tshark_dns_layer['text']))
         )
+        if dns_question_summary:
+            question_name, question_type, question_class, _ = dns_question_summary
 
-        if public_suffix_list_trie and (domain_properties := public_suffix_list_trie.get_domain_properties(domain=question_name)):
-            extra_question_params = dict(
-                registered_domain=domain_properties.registered_domain or None,
-                subdomain=domain_properties.subdomain or None,
-                top_level_domain=domain_properties.effective_top_level_domain or None
+            if public_suffix_list_trie and (domain_properties := public_suffix_list_trie.get_domain_properties(domain=question_name)):
+                extra_question_params = dict(
+                    registered_domain=domain_properties.registered_domain or None,
+                    subdomain=domain_properties.subdomain or None,
+                    top_level_domain=domain_properties.effective_top_level_domain or None
+                )
+            else:
+                extra_question_params = dict()
+
+            dns_question = DNSQuestion(
+                class_=question_class, name=question_name, type=question_type, **extra_question_params
             )
-        else:
-            extra_question_params = dict()
 
         # Parse the answers.
 
@@ -427,6 +436,9 @@ def entry_from_dns(
                 tshark_dns_layer['dns_dns_resp_ttl'] = []
 
             for i, answer_summary_string in enumerate(tshark_dns_layer['text'][1:]):
+                if answer_summary_string == 'Extraneous data':
+                    continue
+
                 answer_name, answer_type, answer_class, answer_data = _parse_dns_summary_string(
                     summary_string=answer_summary_string
                 )
@@ -458,9 +470,7 @@ def entry_from_dns(
             ),
             id=str(int(tshark_dns_layer['dns_dns_id'], 16)),
             op_code=OP_CODE_ID_TO_OP_CODE_NAME[int(tshark_dns_layer['dns_dns_flags_opcode'])],
-            question=DNSQuestion(
-                class_=question_class, name=question_name, type=question_type, **extra_question_params
-            ),
+            question=dns_question,
             resolved_ip=[answer.data for answer in answers if answer.type in {'A', 'AAAA'}] or None,
             response_code=(
                 RCODE_ID_TO_RCODE_NAME[int(rcode_value)]
