@@ -241,7 +241,7 @@ def entry_from_ip(tshark_ip_layer: dict[str, Any]) -> Base:
     )
 
 
-def entry_from_ipv6(tshark_ipv6_layer: dict[str, Any]) -> Base:
+def entry_from_ipv6(tshark_ipv6_layer: dict[str, Any]) -> Base | None:
     """
     Make a `Base` entry from the `ip` layer of TShark's `json` output.
 
@@ -249,9 +249,12 @@ def entry_from_ipv6(tshark_ipv6_layer: dict[str, Any]) -> Base:
     :return: An ECS `Base` entry.
     """
 
-    destination_ip: str = tshark_ipv6_layer['ipv6_ipv6_dst']
-    source_ip: str = tshark_ipv6_layer['ipv6_ipv6_src']
-    protocol_number: str = tshark_ipv6_layer['ipv6_ipv6_nxt']
+    destination_ip: str | None = tshark_ipv6_layer.get('ipv6_ipv6_dst')
+    source_ip: str | None = tshark_ipv6_layer.get('ipv6_ipv6_src')
+    protocol_number: str | None = tshark_ipv6_layer.get('ipv6_ipv6_nxt')
+
+    if not destination_ip and not source_ip and not protocol_number:
+        return None
 
     return Base(
         destination=Destination(address=destination_ip, ip=destination_ip),
@@ -583,20 +586,27 @@ def entry_from_tls(
         case '1':
             server_name = tshark_tls_layer.get('tls_tls_handshake_extensions_server_name')
 
+            ja3_ssl_version: str | None = None
+            ja3_cipher: str | None = None
+            ja3_ssl_extension: str | None = None
+            ja3_elliptic_curve: str | None = None
+            ja3_elliptic_curve_point_format: str | None = None
+
             ja3_full = tshark_tls_layer.get('tls_tls_handshake_ja3_full')
-            (
-                ja3_ssl_version,
-                ja3_cipher,
-                ja3_ssl_extension,
-                ja3_elliptic_curve,
-                ja3_elliptic_curve_point_format
-            ) = ja3_full.split(',')
+            if ja3_full:
+                (
+                    ja3_ssl_version,
+                    ja3_cipher,
+                    ja3_ssl_extension,
+                    ja3_elliptic_curve,
+                    ja3_elliptic_curve_point_format
+                ) = ja3_full.split(',')
 
             client_server_params = dict(
                 client=TLSClient(
                     server_name=server_name,
                     ja3=tshark_tls_layer.get('tls_tls_handshake_ja3'),
-                    ja3_full=tshark_tls_layer.get('tls_tls_handshake_ja3_full'),
+                    ja3_full=ja3_full,
                     ja3_ssl_version=ja3_ssl_version,
                     ja3_cipher=ja3_cipher,
                     ja3_ssl_extension=ja3_ssl_extension,
