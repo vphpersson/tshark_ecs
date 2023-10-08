@@ -602,6 +602,16 @@ def entry_from_tls(
                     ja3_elliptic_curve_point_format
                 ) = ja3_full.split(',')
 
+            supported_ciphers: list[str] | None = None
+            if include_supported_ciphers:
+                cipher_ids: list[str] = (
+                    v if isinstance(v := tshark_tls_layer.get('tls_tls_handshake_ciphersuite', []), list) else [v]
+                )
+                supported_ciphers: list[str] | None = [
+                    CIPHER_ID_TO_CIPHER_NAME.get(int(cipher_id, 16), cipher_id)
+                    for cipher_id in cipher_ids
+                ] or None
+
             client_server_params = dict(
                 client=TLSClient(
                     server_name=server_name,
@@ -612,10 +622,7 @@ def entry_from_tls(
                     ja3_ssl_extension=ja3_ssl_extension,
                     ja3_elliptic_curve=ja3_elliptic_curve,
                     ja3_elliptic_curve_point_format=ja3_elliptic_curve_point_format,
-                    supported_ciphers=([
-                        CIPHER_ID_TO_CIPHER_NAME.get(int(cipher_id, 16), cipher_id)
-                        for cipher_id in tshark_tls_layer.get('tls_tls_handshake_ciphersuite', [])
-                    ] or None) if include_supported_ciphers else None
+                    supported_ciphers=supported_ciphers
                 )
             )
         # "2" corresponds to a "ServerHello" message.
