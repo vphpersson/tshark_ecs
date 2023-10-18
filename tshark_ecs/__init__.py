@@ -472,7 +472,7 @@ def entry_from_dns(
                 }
             ),
             id=str(int(tshark_dns_layer['dns_dns_id'], 16)),
-            op_code=OP_CODE_ID_TO_OP_CODE_NAME[int(tshark_dns_layer['dns_dns_flags_opcode'])],
+            op_code=OP_CODE_ID_TO_OP_CODE_NAME.get(int(tshark_dns_layer['dns_dns_flags_opcode']), None),
             question=dns_question,
             resolved_ip=[answer.data for answer in answers if answer.type in {'A', 'AAAA'}] or None,
             response_code=(
