@@ -411,34 +411,35 @@ def entry_from_dns(
             [text_value] if not isinstance(text_value := tshark_dns_layer['text'], list) else text_value
         )
 
-        dns_question_summary: tuple[str, str, str | None, str | None] | None = _parse_dns_summary_string(
-            summary_string=next(iter(tshark_dns_layer['text']))
-        )
-        if dns_question_summary:
-            question_name, question_type, question_class, _ = dns_question_summary
-
-            if public_suffix_list_trie and (domain_properties := public_suffix_list_trie.get_domain_properties(domain=question_name)):
-                extra_question_params = dict(
-                    registered_domain=domain_properties.registered_domain or None,
-                    subdomain=domain_properties.subdomain or None,
-                    top_level_domain=domain_properties.effective_top_level_domain or None
-                )
-            else:
-                extra_question_params = dict()
-
-            dns_question = DNSQuestion(
-                class_=question_class, name=question_name, type=question_type, **extra_question_params
+        if tshark_dns_layer['text'][0] == 'Queries':
+            dns_question_summary: tuple[str, str, str | None, str | None] | None = _parse_dns_summary_string(
+                summary_string=next(iter(tshark_dns_layer['text'][1:]))
             )
+            if dns_question_summary:
+                question_name, question_type, question_class, _ = dns_question_summary
+
+                if public_suffix_list_trie and (domain_properties := public_suffix_list_trie.get_domain_properties(domain=question_name)):
+                    extra_question_params = dict(
+                        registered_domain=domain_properties.registered_domain or None,
+                        subdomain=domain_properties.subdomain or None,
+                        top_level_domain=domain_properties.effective_top_level_domain or None
+                    )
+                else:
+                    extra_question_params = dict()
+
+                dns_question = DNSQuestion(
+                    class_=question_class, name=question_name, type=question_type, **extra_question_params
+                )
 
         # Parse the answers.
 
-        if len(tshark_dns_layer['text']) > 1:
+        if len(tshark_dns_layer['text']) > 2:
             if ttl_value := tshark_dns_layer.get('dns_dns_resp_ttl'):
                 tshark_dns_layer['dns_dns_resp_ttl'] = ([ttl_value] if not isinstance(ttl_value, list) else ttl_value)
             else:
                 tshark_dns_layer['dns_dns_resp_ttl'] = []
 
-            for i, answer_summary_string in enumerate(tshark_dns_layer['text'][1:]):
+            for i, answer_summary_string in enumerate(tshark_dns_layer['text'][2:]):
                 if answer_summary_string in {'Extraneous data', 'Additional records'}:
                     continue
 
