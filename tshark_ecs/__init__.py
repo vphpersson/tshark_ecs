@@ -7,6 +7,7 @@ from functools import partial
 from datetime import datetime
 from dataclasses import dataclass
 from itertools import zip_longest
+from dataclasses import dataclass
 
 from ecs_py import DNS, DNSAnswer, DNSQuestion, Base, Source, Destination, Network, TLS, TLSClient, TLSServer, ICMP, \
     Client, Server, TCP, Http, HttpRequest, HttpResponse, Observer, Interface, ObserverIngressEgress
@@ -216,6 +217,58 @@ ICMP_TYPE_TO_CODE_TO_NAME: Final[dict[int, dict[int, str]]] = {
         2: 'Bad length',
     }
 }
+
+EXPERT_INFO_SEVERITY_ID_TO_LEVEL: Final[dict[int, str]] = {
+    0x00100000: 'comment',
+    0x00200000: 'chat',
+    0x00400000: 'note',
+    0x00600000: 'warn',
+    0x00800000: 'error'
+}
+
+EXPERT_INFO_GROUP_ID_TO_MEANING: Final[dict[int, str]] = {
+    0x01000000: 'A checksum was invalid.',
+    0x02000000: 'A protocol sequence number was suspicious.',
+    0x03000000: 'An application response code indicates a potential problem.',
+    0x04000000: 'Application request.',
+    0x05000000: 'Dissection incomplete or data can’t be decoded for other reasons.',
+    0x06000000: 'Problems while reassembling.',
+    0x07000000: 'Malformed packet or dissector has a bug.',
+    0x08000000: 'Debugging information.',
+    0x09000000: 'Violation of a protocol’s specification.',
+    0x0a000000: 'Security problem.',
+    0x0b000000: 'Packet comment.',
+    0x0c000000: 'Decryption issue.',
+    0x0d000000: 'The protocol field has incomplete data and was dissected based on assumed value.',
+    0x0e000000: 'The protocol field has been deprecated.'
+}
+
+
+def get_expert_info(tshark_layer_dict: dict) -> dict | None:
+
+    expert_dict: dict | None = None
+
+    if '_ws_malformed' in tshark_layer_dict:
+        expert_dict = tshark_layer_dict['_ws_malformed'].get('_ws_expert', None)
+
+    if not expert_dict:
+        return None
+
+    severity_id = int(expert_dict['_ws_expert__ws_expert_severity'])
+    group_id = int(expert_dict['_ws_expert__ws_expert_group'])
+    message: str = expert_dict['_ws_expert__ws_expert_message']
+
+    return dict(
+        severity=dict(
+            id=severity_id,
+            level=EXPERT_INFO_SEVERITY_ID_TO_LEVEL.get(severity_id)
+        ),
+        group_id=dict(
+            id=group_id,
+            meaning=EXPERT_INFO_GROUP_ID_TO_MEANING.get(group_id)
+        ),
+        message=message
+    )
 
 
 def entry_from_ip(tshark_ip_layer: dict[str, Any]) -> Base:
@@ -985,7 +1038,8 @@ def handle_tshark_dict(
             base=base_entry,
             extra=dict(
                 interface=frame_layer['frame_frame_interface_name'],
-                protocols=frame_layer['frame_frame_protocols'].split(':')
+                protocols=frame_layer['frame_frame_protocols'].split(':'),
+                expert_info=get_expert_info(tshark_layer_dict=tshark_dict['layers'])
             )
         )
 
