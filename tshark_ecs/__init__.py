@@ -439,12 +439,17 @@ def entry_from_dns(
                 tshark_dns_layer['dns_dns_resp_ttl'] = []
 
             for i, answer_summary_string in enumerate(tshark_dns_layer['text'][1:]):
-                if answer_summary_string == 'Extraneous data':
+                if answer_summary_string in {'Extraneous data', 'Additional records'}:
                     continue
 
-                answer_name, answer_type, answer_class, answer_data = _parse_dns_summary_string(
+                answer_result: tuple[str, str, str, str] | None = _parse_dns_summary_string(
                     summary_string=answer_summary_string
                 )
+
+                if not answer_result:
+                    continue
+
+                answer_name, answer_type, answer_class, answer_data = answer_result
 
                 if answer_type == 'OPT' and hide_opt:
                     continue
@@ -967,10 +972,13 @@ def handle_tshark_dict(
             break
 
     if base_entry is not None:
-        base_entry.set_field_value(
-            field_name='event.created',
-            value=datetime.fromtimestamp(float(frame_layer['frame_frame_time_epoch']))
-        )
+        timestamp: datetime
+        try:
+            timestamp = datetime.fromtimestamp(float(frame_layer['frame_frame_time_epoch']))
+        except ValueError:
+            timestamp = datetime.fromisoformat(frame_layer['frame_frame_time_epoch'])
+
+        base_entry.set_field_value(field_name='event.created', value=timestamp)
 
         return ParseResult(
             base=base_entry,
