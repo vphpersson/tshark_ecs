@@ -1034,13 +1034,15 @@ def handle_tshark_dict(
 
         base_entry.set_field_value(field_name='event.created', value=timestamp)
 
-        return ParseResult(
-            base=base_entry,
-            extra=dict(
-                interface=frame_layer['frame_frame_interface_name'],
-                protocols=frame_layer['frame_frame_protocols'].split(':'),
-                expert_info=get_expert_info(tshark_layer_dict=tshark_dict['layers'])
-            )
+        extra_dict = dict(
+            interface=frame_layer['frame_frame_interface_name'],
+            protocols=frame_layer['frame_frame_protocols'].split(':'),
+            expert_info=get_expert_info(tshark_layer_dict=tshark_dict['layers']),
         )
+
+        if nflog_timestamp := layer_name_to_layer_dict.get('nflog', {}).get('nflog_nflog_timestamp', None):
+            extra_dict['timestamp'] = nflog_timestamp
+
+        return ParseResult(base=base_entry, extra=extra_dict)
 
     return base_entry
