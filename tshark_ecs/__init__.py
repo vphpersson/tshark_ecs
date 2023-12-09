@@ -1041,7 +1041,8 @@ def handle_tshark_dict(
         )
 
         if nflog_timestamp := layer_name_to_layer_dict.get('nflog', {}).get('nflog_nflog_timestamp', None):
-            extra_dict['timestamp'] = nflog_timestamp
+            # NOTE: The timestamp seems to always have `.000`... Seems like a bug?
+            extra_dict['timestamp'] = nflog_timestamp.replace('.000', '.')
 
         return ParseResult(base=base_entry, extra=extra_dict)
 
